@@ -9,32 +9,32 @@ use tarpc::{
 };
 use tokio::{fs, net::UnixSocket};
 
-use crate::protocol::{self, Bar};
+use crate::control::{self, BarCtl};
 
 #[derive(Clone)]
-struct Server;
+struct BarCtlServer;
 
-impl protocol::Bar for Server {
+impl control::BarCtl for BarCtlServer {
     #[tracing::instrument(skip(self))]
-    async fn start(self, _: context::Context) -> protocol::Result<()> {
+    async fn start(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received start req.");
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn stop(self, _: context::Context) -> protocol::Result<()> {
+    async fn stop(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received stop req.");
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn status(self, _: context::Context) -> protocol::Result<()> {
+    async fn status(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received status req.");
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn reload(self, _: context::Context) -> protocol::Result<()> {
+    async fn reload(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received reload req.");
         Ok(())
     }
@@ -69,7 +69,7 @@ pub async fn run(sock_path: &Path, backlog: u32) -> anyhow::Result<()> {
             tarpc::serde_transport::new(framed, Bincode::default());
 
         let fut = BaseChannel::with_defaults(transport)
-            .execute(Server.serve())
+            .execute(BarCtlServer.serve())
             .for_each(spawn);
         tokio::spawn(fut);
     }

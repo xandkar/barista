@@ -55,13 +55,13 @@ impl Cli {
         }
 
         if let Cmd::Server { backlog } = self.cmd {
-            barista::protocol::server::run(&sock_file, backlog)
+            barista::control::server::run(&sock_file, backlog)
                 .instrument(debug_span!("server"))
                 .await
         } else {
             let timeout = Duration::from_secs(5);
             let client =
-                barista::protocol::client::Client::new(&sock_file, timeout)
+                barista::control::client::Client::new(&sock_file, timeout)
                     .await?;
             async {
                 match &self.cmd {

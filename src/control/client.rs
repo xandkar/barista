@@ -9,10 +9,10 @@ use tarpc::{
 };
 use tokio::net::UnixStream;
 
-use crate::protocol;
+use crate::control;
 
 pub struct Client {
-    client: protocol::BarClient,
+    client: control::BarCtlClient,
     ctx: tarpc::context::Context,
 }
 
@@ -27,7 +27,7 @@ impl Client {
             codec_builder.new_framed(conn),
             Bincode::default(),
         );
-        let client = protocol::BarClient::new(
+        let client = control::BarCtlClient::new(
             tarpc::client::Config::default(),
             transport,
         )

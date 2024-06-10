@@ -11,7 +11,7 @@ pub enum Error {}
 pub type Result<T> = result::Result<T, Error>;
 
 #[tarpc::service]
-pub trait Bar {
+pub trait BarCtl {
     async fn start() -> Result<()>;
     async fn stop() -> Result<()>;
     async fn status() -> Result<()>;
