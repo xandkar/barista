@@ -326,13 +326,14 @@ impl Server {
     }
 }
 
+#[tracing::instrument(name = "bar", skip_all)]
 pub async fn run(
     tx: ApiSender,
     mut rx: ApiReceiver,
     dir: PathBuf,
     conf: Conf,
 ) -> anyhow::Result<()> {
-    tracing::info!(?conf, "Starting server");
+    tracing::info!(?conf, "Starting.");
     let mut server = Server::new(conf, dir, tx);
     while let Some(Api { msg }) = rx.recv().await {
         server.handle(msg).await?;

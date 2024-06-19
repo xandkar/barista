@@ -11,6 +11,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
+use tracing::{error_span, Instrument};
 
 use crate::{bar, conf};
 
@@ -52,12 +53,21 @@ impl Feed {
             unreachable!("stderr not requested at process spawn.")
         });
         let life = CancellationToken::new();
-        let out = tokio::spawn(route_out(stdout, pos, dst, life.clone()));
-        let err = tokio::spawn(route_err(
-            stderr,
-            dir.join(conf::FEED_LOG_FILE_NAME),
-            life.clone(),
-        ));
+        let feed_span = error_span!("feed", name = cfg.name);
+        let out = tokio::spawn(
+            route_out(stdout, pos, dst, life.clone())
+                .instrument(feed_span.clone())
+                .in_current_span(),
+        );
+        let err = tokio::spawn(
+            route_err(
+                stderr,
+                dir.join(conf::FEED_LOG_FILE_NAME),
+                life.clone(),
+            )
+            .instrument(feed_span.clone())
+            .in_current_span(),
+        );
         let selph = Self {
             proc,
             life,
@@ -86,7 +96,7 @@ impl Feed {
     }
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(name = "out", skip_all)]
 async fn route_out(
     stdout: process::ChildStdout,
     pos: usize,
@@ -106,7 +116,7 @@ async fn route_out(
                 match line_opt {
                     None => break,
                     Some(line) => {
-                        tracing::debug!(?line, "Read line.");
+                        tracing::debug!(?line, "New");
                         bar::server::input(&dst_tx, pos, line).await?;
                     }
                 }
@@ -116,7 +126,7 @@ async fn route_out(
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(name = "err", skip_all)]
 async fn route_err(
     err: process::ChildStderr,
     dst: PathBuf,
@@ -143,11 +153,10 @@ async fn route_err(
                     match line_opt {
                         None => break,
                         Some(line) => {
-                            tracing::debug!(?line, "Read line.");
+                            tracing::debug!(?line, "New");
                             stderr_log.write_all(line.as_bytes()).await?;
                             stderr_log.write_all(&[b'\n']).await?;
                             stderr_log.flush().await?;
-                            tracing::debug!(?line, "Wrote line.");
                         }
                     }
                 }

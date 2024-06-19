@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context};
 use clap::Parser;
 
 use tokio::{fs, task::JoinSet};
+use tracing::Instrument;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -51,7 +52,7 @@ enum Cmd {
 
 impl Cli {
     #[tokio::main]
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(name = "barista", skip_all)]
     async fn run(&self) -> anyhow::Result<()> {
         tracing::info!(?self, "Starting");
 
@@ -80,11 +81,14 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
     // TODO Handle Ctrl+C. Clear bar on exit.
     let mut siblings = JoinSet::new();
     let bar_tx = barista::bar::server::start(&mut siblings, dir).await?;
-    siblings.spawn(barista::control::server::run(
-        dir.to_path_buf(),
-        backlog,
-        bar_tx.clone(),
-    ));
+    siblings.spawn(
+        barista::control::server::run(
+            dir.to_path_buf(),
+            backlog,
+            bar_tx.clone(),
+        )
+        .in_current_span(),
+    );
     if on {
         barista::bar::server::on(bar_tx).await?;
     }

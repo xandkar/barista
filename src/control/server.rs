@@ -8,6 +8,7 @@ use tarpc::{
     tokio_util::codec::LengthDelimitedCodec,
 };
 use tokio::{fs, net::UnixSocket};
+use tracing::Instrument;
 
 use crate::{
     bar, conf,
@@ -20,28 +21,28 @@ struct BarCtlServer {
 }
 
 impl control::BarCtl for BarCtlServer {
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn on(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received start req.");
         bar::server::on(self.bar_tx).await?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn off(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received stop req.");
         bar::server::off(self.bar_tx).await?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn status(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received status req.");
         bar::server::status(self.bar_tx).await?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn reload(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received reload req.");
         bar::server::reload(self.bar_tx).await?;
@@ -49,6 +50,7 @@ impl control::BarCtl for BarCtlServer {
     }
 }
 
+#[tracing::instrument(name = "control", skip_all)]
 pub async fn run(
     dir: PathBuf,
     backlog: u32,
@@ -86,7 +88,7 @@ pub async fn run(
         let fut = BaseChannel::with_defaults(transport)
             .execute(bar_ctl_srv.clone().serve())
             .for_each(spawn);
-        tokio::spawn(fut);
+        tokio::spawn(fut.in_current_span());
     }
 }
 
