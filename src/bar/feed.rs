@@ -33,7 +33,8 @@ impl Feed {
             "Failed to create all directories in path: {:?}",
             dir
         ))?;
-        let mut proc = Command::new(&cfg.shell)
+        let shell = cfg.shell.clone().unwrap_or(conf::default_shell());
+        let mut proc = Command::new(shell)
             .arg("-c") // FIXME Some shells may use a different argument flag?
             .arg(&cfg.cmd)
             .current_dir(dir)

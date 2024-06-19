@@ -284,11 +284,13 @@ impl Server {
     }
 
     fn reschedule_expiration(&mut self, pos: usize) {
-        let ttl = Duration::from_secs_f64(self.conf.feeds[pos].ttl);
-        let new = self.schedule(Msg::Expiration { pos }, ttl);
-        self.expiration_timers[pos]
-            .replace(new)
-            .map(|old| old.abort());
+        if let Some(ttl) = self.conf.feeds[pos].ttl {
+            let ttl = Duration::from_secs_f64(ttl);
+            let new = self.schedule(Msg::Expiration { pos }, ttl);
+            self.expiration_timers[pos]
+                .replace(new)
+                .map(|old| old.abort());
+        }
     }
 
     fn schedule(&self, msg: Msg, delay: Duration) -> JoinHandle<()> {

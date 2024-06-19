@@ -30,16 +30,13 @@ pub enum Dst {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Feed {
     pub name: String,
-
-    #[serde(default = "default_shell")]
-    pub shell: PathBuf,
-
     pub cmd: String,
 
-    pub ttl: f64,
+    pub ttl: Option<f64>,
+    pub shell: Option<PathBuf>,
 }
 
-fn default_shell() -> PathBuf {
+pub fn default_shell() -> PathBuf {
     PathBuf::from("/bin/bash")
 }
 
@@ -50,14 +47,14 @@ impl Default for Conf {
                 Feed {
                     name: "uptime".to_string(),
                     cmd: "while :; do uptime; sleep 1; done".to_string(),
-                    ttl: 1.0,
-                    shell: default_shell(),
+                    ttl: Some(1.0),
+                    shell: None,
                 },
                 Feed {
                     name: "time".to_string(),
                     cmd: "while :; do date; sleep 1; done".to_string(),
-                    ttl: 1.0,
-                    shell: default_shell(),
+                    ttl: Some(1.0),
+                    shell: None,
                 },
             ],
             dst: Dst::X11RootWindowName,
