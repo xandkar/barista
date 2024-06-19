@@ -1,11 +1,7 @@
 use std::time::Duration;
 
 use tokio::time::sleep;
-use tracing_subscriber::{
-    fmt::{self, format::FmtSpan},
-    layer::SubscriberExt,
-    EnvFilter, Layer,
-};
+use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
 
 pub fn init(level: tracing::Level) -> anyhow::Result<()> {
     let layer_stderr = fmt::Layer::new()
@@ -14,7 +10,6 @@ pub fn init(level: tracing::Level) -> anyhow::Result<()> {
         .with_file(false)
         .with_line_number(true)
         .with_thread_ids(true)
-        .with_span_events(FmtSpan::CLOSE)
         .with_filter(
             EnvFilter::from_default_env().add_directive(level.into()),
         );
