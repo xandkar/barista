@@ -9,7 +9,7 @@ use tarpc::{
 };
 use tokio::net::UnixStream;
 
-use crate::control;
+use crate::{conf, control};
 
 pub struct Client {
     client: control::BarCtlClient,
@@ -17,11 +17,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn new(
-        sock_file: &Path,
-        timeout: Duration,
-    ) -> anyhow::Result<Self> {
-        let conn = UnixStream::connect(sock_file).await?;
+    pub async fn new(dir: &Path, timeout: Duration) -> anyhow::Result<Self> {
+        let conn = UnixStream::connect(conf::sock_file(dir)).await?;
         let codec_builder = LengthDelimitedCodec::builder();
         let transport = tarpc::serde_transport::new(
             codec_builder.new_framed(conn),
@@ -40,13 +37,13 @@ impl Client {
         Ok(selph)
     }
 
-    pub async fn start(&self) -> anyhow::Result<()> {
-        self.client.start(self.ctx).await??;
+    pub async fn on(&self) -> anyhow::Result<()> {
+        self.client.on(self.ctx).await??;
         Ok(())
     }
 
-    pub async fn stop(&self) -> anyhow::Result<()> {
-        self.client.stop(self.ctx).await??;
+    pub async fn off(&self) -> anyhow::Result<()> {
+        self.client.off(self.ctx).await??;
         Ok(())
     }
 

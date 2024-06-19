@@ -1,4 +1,4 @@
-use std::{future::Future, path::Path};
+use std::{future::Future, path::PathBuf};
 
 use futures_util::StreamExt;
 use tarpc::{
@@ -9,47 +9,62 @@ use tarpc::{
 };
 use tokio::{fs, net::UnixSocket};
 
-use crate::control::{self, BarCtl};
+use crate::{
+    bar, conf,
+    control::{self, BarCtl},
+};
 
 #[derive(Clone)]
-struct BarCtlServer;
+struct BarCtlServer {
+    bar_tx: bar::server::ApiSender,
+}
 
 impl control::BarCtl for BarCtlServer {
     #[tracing::instrument(skip(self))]
-    async fn start(self, _: context::Context) -> control::Result<()> {
+    async fn on(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received start req.");
+        bar::server::on(self.bar_tx).await?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn stop(self, _: context::Context) -> control::Result<()> {
+    async fn off(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received stop req.");
+        bar::server::off(self.bar_tx).await?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
     async fn status(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received status req.");
+        bar::server::status(self.bar_tx).await?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
     async fn reload(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received reload req.");
+        bar::server::reload(self.bar_tx).await?;
         Ok(())
     }
 }
 
-pub async fn run(sock_path: &Path, backlog: u32) -> anyhow::Result<()> {
-    if let Err(error) = fs::remove_file(sock_path).await {
+pub async fn run(
+    dir: PathBuf,
+    backlog: u32,
+    bar_tx: bar::server::ApiSender,
+) -> anyhow::Result<()> {
+    let sock_file = conf::sock_file(&dir);
+    if let Err(error) = fs::remove_file(&sock_file).await {
         tracing::warn!(
-            ?sock_path,
+            ?sock_file,
             ?error,
             "Failed to remove existing sock file."
         );
     }
+    let bar_ctl_srv = BarCtlServer { bar_tx };
     let socket = UnixSocket::new_stream()?;
-    socket.bind(sock_path)?;
+    socket.bind(&sock_file)?;
     let listener = socket.listen(backlog)?;
     let codec_builder = LengthDelimitedCodec::builder();
     loop {
@@ -69,7 +84,7 @@ pub async fn run(sock_path: &Path, backlog: u32) -> anyhow::Result<()> {
             tarpc::serde_transport::new(framed, Bincode::default());
 
         let fut = BaseChannel::with_defaults(transport)
-            .execute(BarCtlServer.serve())
+            .execute(bar_ctl_srv.clone().serve())
             .for_each(spawn);
         tokio::spawn(fut);
     }

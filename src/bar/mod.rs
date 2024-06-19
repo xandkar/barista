@@ -1,9 +1,16 @@
+use crate::conf::Conf;
+
+pub mod server;
+
+mod feed;
+
 pub struct Bar {
     left_pad: String,
     separator: String,
     right_pad: String,
     clear_char: char,
     expire_char: char,
+    shown: bool,
 
     slots: Vec<String>,
 }
@@ -27,12 +34,31 @@ impl Bar {
             right_pad: right_pad.to_string(),
             clear_char,
             expire_char,
+            shown: false,
             slots,
         }
+    }
+    pub fn from_conf(conf: &Conf) -> Self {
+        let n = conf.feeds.len();
+        Self::new(
+            n,
+            &conf.pad_left,
+            &conf.sep,
+            &conf.pad_right,
+            ' ',
+            conf.expiry_character,
+        )
     }
 
     pub fn set(&mut self, i: usize, data: &str) {
         self.slots[i] = data.to_string();
+        self.shown = false;
+    }
+
+    pub fn clear_all(&mut self) {
+        for i in 0..self.slots.len() {
+            self.clear(i)
+        }
     }
 
     pub fn clear(&mut self, i: usize) {
@@ -46,15 +72,24 @@ impl Bar {
     fn overwrite(&mut self, i: usize, c: char) {
         let new: String = (0..self.slots[i].len()).map(|_| c).collect();
         self.set(i, &new);
+        self.shown = false;
     }
 
-    pub fn show(&self) -> String {
+    fn show(&self) -> String {
         [
             self.left_pad.to_string(),
             self.slots.join(&self.separator),
             self.right_pad.to_string(),
         ]
-        .join("")
+        .into_iter()
+        .collect()
+    }
+
+    pub fn show_unshown(&mut self) -> Option<String> {
+        (!self.shown).then(|| {
+            self.shown = true;
+            self.show()
+        })
     }
 }
 
