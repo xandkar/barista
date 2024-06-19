@@ -11,7 +11,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error_span, Instrument};
+use tracing::{info_span, Instrument};
 
 use crate::{bar, conf};
 
@@ -53,7 +53,7 @@ impl Feed {
             unreachable!("stderr not requested at process spawn.")
         });
         let life = CancellationToken::new();
-        let feed_span = error_span!("feed", name = cfg.name);
+        let feed_span = info_span!("feed", name = cfg.name);
         let out = tokio::spawn(
             route_out(stdout, pos, dst, life.clone())
                 .instrument(feed_span.clone())
