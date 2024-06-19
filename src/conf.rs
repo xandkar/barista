@@ -7,11 +7,12 @@ pub const FEEDS_DIR_NAME: &str = "feeds";
 pub const FEED_LOG_FILE_NAME: &str = "log";
 pub const SOCK_FILE_NAME: &str = "socket";
 pub const CONF_FILE_NAME: &str = "conf.toml";
+pub const DEFAULT_DST: Dst = Dst::X11RootWindowName;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Conf {
     pub feeds: Vec<Feed>,
-    pub dst: Dst,
+    pub dst: Option<Dst>,
     pub sep: String,
     pub pad_left: String,
     pub pad_right: String,
@@ -57,7 +58,7 @@ impl Default for Conf {
                     shell: None,
                 },
             ],
-            dst: Dst::X11RootWindowName,
+            dst: Some(DEFAULT_DST),
             sep: "   ".to_string(),
             pad_left: " ".to_string(),
             pad_right: " ".to_string(),
@@ -89,6 +90,10 @@ impl Conf {
             fs::write(&file, toml::to_string_pretty(&default)?).await?;
             Ok(default)
         }
+    }
+
+    pub fn get_dst(&self) -> Dst {
+        self.dst.as_ref().unwrap_or(&DEFAULT_DST).to_owned()
     }
 }
 

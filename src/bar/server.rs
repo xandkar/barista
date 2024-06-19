@@ -158,7 +158,7 @@ impl Server {
     }
 
     async fn output_data(&mut self, data: &str) -> anyhow::Result<()> {
-        match &self.conf.dst {
+        match self.conf.get_dst() {
             conf::Dst::StdOut => println!("{}", &data),
             conf::Dst::StdErr => eprintln!("{}", &data),
             conf::Dst::File { path } => fs::write(path, data).await?,
