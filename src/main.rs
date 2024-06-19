@@ -11,7 +11,7 @@ struct Cli {
     #[clap(short, long, default_value = concat!("~/.", barista::NAME!()))]
     dir: String,
 
-    #[clap(short, long = "level", default_value_t = tracing::Level::DEBUG)]
+    #[clap(short, long = "level", default_value_t = tracing::Level::INFO)]
     log_level: tracing::Level,
 
     #[clap(short, long, default_value_t = 5.0)]
