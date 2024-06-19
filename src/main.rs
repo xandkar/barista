@@ -77,6 +77,7 @@ impl Cli {
 
 #[tracing::instrument(skip_all)]
 async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
+    // TODO Handle Ctrl+C. Clear bar on exit.
     let mut siblings = JoinSet::new();
     let bar_tx = barista::bar::server::start(&mut siblings, dir).await?;
     siblings.spawn(barista::control::server::run(
