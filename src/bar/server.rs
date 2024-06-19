@@ -114,6 +114,7 @@ pub async fn start(
     Ok(tx)
 }
 
+// TODO State enum.
 struct Server {
     self_tx: ApiSender,
     dir: PathBuf,
@@ -146,26 +147,32 @@ impl Server {
     }
 
     async fn output(&mut self) -> anyhow::Result<()> {
-        self.output_timer
-            .take()
-            .unwrap_or_else(|| unreachable!("Output called without timer."));
         if let Some(data) = self.bar.show_unshown() {
-            match &self.conf.dst {
-                conf::Dst::StdOut => println!("{}", &data),
-                conf::Dst::StdErr => eprintln!("{}", &data),
-                conf::Dst::File { path } => fs::write(path, data).await?,
-                conf::Dst::X11RootWindowName => {
-                    if self.x11.is_none() {
-                        self.x11 = Some(X11::init()?);
-                    }
-                    let x11 = self.x11.take().unwrap_or_else(|| {
-                        unreachable!(
-                            "x11 failure shoudl have caused a return above."
-                        );
-                    });
-                    x11.set_root_window_name(&data)?;
-                    self.x11.replace(x11);
+            self.output_data(&data).await?;
+        }
+        Ok(())
+    }
+
+    async fn output_blank(&mut self) -> anyhow::Result<()> {
+        self.output_data("").await
+    }
+
+    async fn output_data(&mut self, data: &str) -> anyhow::Result<()> {
+        match &self.conf.dst {
+            conf::Dst::StdOut => println!("{}", &data),
+            conf::Dst::StdErr => eprintln!("{}", &data),
+            conf::Dst::File { path } => fs::write(path, data).await?,
+            conf::Dst::X11RootWindowName => {
+                if self.x11.is_none() {
+                    self.x11 = Some(X11::init()?);
                 }
+                let x11 = self.x11.take().unwrap_or_else(|| {
+                    unreachable!(
+                        "x11 failure shoudl have caused a return above."
+                    );
+                });
+                x11.set_root_window_name(&data)?;
+                self.x11.replace(x11);
             }
         }
         Ok(())
@@ -188,6 +195,7 @@ impl Server {
             self.feeds.push(feed_proc);
             self.expiration_timers.push(None);
             self.reschedule_expiration(pos);
+            self.ensure_output_scheduled();
         }
         Ok(())
     }
@@ -200,6 +208,8 @@ impl Server {
         for timer_opt in self.expiration_timers.drain(0..) {
             timer_opt.map(|timer| timer.abort());
         }
+        self.output_timer.take().map(|timer| timer.abort());
+        self.output_blank().await?;
         self.x11.take();
         Ok(())
     }
@@ -232,6 +242,11 @@ impl Server {
                 self.ensure_output_scheduled();
             }
             Msg::Output => {
+                self.output_timer.take().unwrap_or_else(|| {
+                    unreachable!(
+                        "Output msg arrived without being scheduled."
+                    )
+                });
                 if let Err(error) = self.output().await {
                     tracing::error!(?error, "Failed to output.");
                 }
@@ -278,8 +293,9 @@ impl Server {
 
     fn ensure_output_scheduled(&mut self) {
         if self.output_timer.is_none() {
-            self.output_timer
-                .replace(self.schedule(Msg::Output, self.output_interval));
+            let output_timer =
+                self.schedule(Msg::Output, self.output_interval);
+            self.output_timer = Some(output_timer);
         }
     }
 
