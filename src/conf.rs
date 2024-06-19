@@ -60,9 +60,7 @@ impl Default for Conf {
                     shell: default_shell(),
                 },
             ],
-            dst: Dst::File {
-                path: PathBuf::from("foobar"),
-            },
+            dst: Dst::X11RootWindowName,
             sep: "   ".to_string(),
             pad_left: " ".to_string(),
             pad_right: " ".to_string(),

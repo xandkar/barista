@@ -17,6 +17,7 @@ use tracing::Instrument;
 use crate::{
     bar::feed::Feed,
     conf::{self, Conf},
+    x11::X11,
 };
 
 use super::Bar;
@@ -122,6 +123,7 @@ struct Server {
     expiration_timers: Vec<Option<JoinHandle<()>>>,
     output_interval: Duration,
     output_timer: Option<JoinHandle<()>>,
+    x11: Option<X11>,
 }
 
 impl Server {
@@ -137,6 +139,7 @@ impl Server {
             expiration_timers: Vec::new(),
             output_interval,
             output_timer: None,
+            x11: None,
         };
         selph.ensure_output_scheduled();
         selph
@@ -151,7 +154,18 @@ impl Server {
                 conf::Dst::StdOut => println!("{}", &data),
                 conf::Dst::StdErr => eprintln!("{}", &data),
                 conf::Dst::File { path } => fs::write(path, data).await?,
-                conf::Dst::X11RootWindowName => todo!("X11 output"),
+                conf::Dst::X11RootWindowName => {
+                    if self.x11.is_none() {
+                        self.x11 = Some(X11::init()?);
+                    }
+                    let x11 = self.x11.take().unwrap_or_else(|| {
+                        unreachable!(
+                            "x11 failure shoudl have caused a return above."
+                        );
+                    });
+                    x11.set_root_window_name(&data)?;
+                    self.x11.replace(x11);
+                }
             }
         }
         Ok(())
@@ -186,6 +200,7 @@ impl Server {
         for timer_opt in self.expiration_timers.drain(0..) {
             timer_opt.map(|timer| timer.abort());
         }
+        self.x11.take();
         Ok(())
     }
 
