@@ -188,7 +188,7 @@ impl Server {
             let feed_dir = self
                 .dir
                 .join(conf::FEEDS_DIR_NAME)
-                .join(format!("{:03}-{}", pos, &feed_cfg.name));
+                .join(format!("{:02}-{}", pos, &feed_cfg.name));
             let feed_proc =
                 Feed::start(feed_cfg, &feed_dir, pos, self.self_tx.clone())
                     .await?;
