@@ -108,13 +108,16 @@ async fn route_out(
     loop {
         tokio::select! {
             _ = life.cancelled() => {
-                tracing::info!("Cancelled. Exiting.");
+                tracing::warn!("Cancelled.");
                 break;
             }
             line_opt_res = lines.next_line() => {
                 let line_opt = line_opt_res?;
                 match line_opt {
-                    None => break,
+                    None => {
+                        tracing::warn!("stderr closed");
+                        break;
+                    },
                     Some(line) => {
                         tracing::debug!(?line, "New");
                         bar::server::input(&dst_tx, pos, line).await?;
@@ -123,6 +126,7 @@ async fn route_out(
             }
         }
     }
+    tracing::warn!("Exiting.");
     Ok(())
 }
 
@@ -145,13 +149,16 @@ async fn route_err(
         loop {
             tokio::select! {
                 _ = life.cancelled() => {
-                    tracing::info!("Cancelled. Exiting.");
+                    tracing::warn!("Cancelled");
                     break;
                 }
                 line_opt_res = lines.next_line() => {
                     let line_opt = line_opt_res?;
                     match line_opt {
-                        None => break,
+                        None => {
+                            tracing::warn!("stderr closed");
+                            break;
+                        },
                         Some(line) => {
                             tracing::debug!(?line, "New");
                             stderr_log.write_all(line.as_bytes()).await?;
@@ -162,6 +169,7 @@ async fn route_err(
                 }
             }
         }
+        tracing::warn!("Exiting");
         Ok::<(), anyhow::Error>(())
     }
     .await
