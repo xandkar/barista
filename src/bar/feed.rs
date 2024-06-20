@@ -17,6 +17,7 @@ use crate::{bar, conf};
 
 #[derive(Debug)]
 pub struct Feed {
+    pub name: String,
     proc: process::Child,
     life: CancellationToken,
     out: Option<JoinHandle<anyhow::Result<()>>>,
@@ -69,6 +70,7 @@ impl Feed {
             .in_current_span(),
         );
         let selph = Self {
+            name: cfg.name.to_string(),
             proc,
             life,
             out: Some(out),
@@ -77,21 +79,29 @@ impl Feed {
         Ok(selph)
     }
 
+    #[tracing::instrument(name = "feed_stop", skip_all, fields(name = self.name))]
     pub async fn stop(&mut self) -> anyhow::Result<()> {
+        tracing::debug!("Stopping");
         self.proc.kill().await?;
+        tracing::debug!("Child proc killed.");
 
-        // TODO Does stdio exit automatically on kill?
-        // TODO Should still work without cancellation token?
+        // XXX std(out/err) _should_ exit on kill, but some children misbehave
+        //     and have to be cancelled.
         self.life.cancel();
 
         self.out
             .take()
             .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
             .await??;
+        tracing::debug!("stdout router exited");
+
         self.err
             .take()
             .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
             .await??;
+        tracing::debug!("stderr router exited");
+
+        tracing::info!("Stopped.");
         Ok(())
     }
 }
@@ -115,7 +125,7 @@ async fn route_out(
                 let line_opt = line_opt_res?;
                 match line_opt {
                     None => {
-                        tracing::warn!("stdout closed");
+                        tracing::debug!("Closed");
                         break;
                     },
                     Some(line) => {
@@ -126,7 +136,7 @@ async fn route_out(
             }
         }
     }
-    tracing::warn!("Exiting.");
+    tracing::debug!("Exiting.");
     Ok(())
 }
 
@@ -156,7 +166,7 @@ async fn route_err(
                     let line_opt = line_opt_res?;
                     match line_opt {
                         None => {
-                            tracing::warn!("stderr closed");
+                            tracing::debug!("Closed");
                             break;
                         },
                         Some(line) => {
@@ -169,7 +179,7 @@ async fn route_err(
                 }
             }
         }
-        tracing::warn!("Exiting");
+        tracing::debug!("Exiting");
         Ok::<(), anyhow::Error>(())
     }
     .await
