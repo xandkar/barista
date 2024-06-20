@@ -115,7 +115,7 @@ async fn route_out(
                 let line_opt = line_opt_res?;
                 match line_opt {
                     None => {
-                        tracing::warn!("stderr closed");
+                        tracing::warn!("stdout closed");
                         break;
                     },
                     Some(line) => {
