@@ -1,9 +1,11 @@
 use std::{
+    mem,
     path::{Path, PathBuf},
     result,
     time::Duration,
 };
 
+use futures_util::{stream::FuturesUnordered, StreamExt};
 use tokio::{
     fs,
     sync::{
@@ -146,36 +148,41 @@ impl Server {
         selph
     }
 
-    async fn output(&mut self) -> anyhow::Result<()> {
+    async fn output(&mut self) {
         if let Some(data) = self.bar.show_unshown() {
-            self.output_data(&data).await?;
+            self.output_data(&data).await
         }
-        Ok(())
     }
 
-    async fn output_blank(&mut self) -> anyhow::Result<()> {
+    async fn output_blank(&mut self) {
         self.output_data("").await
     }
 
-    async fn output_data(&mut self, data: &str) -> anyhow::Result<()> {
-        match self.conf.get_dst() {
-            conf::Dst::StdOut => println!("{}", &data),
-            conf::Dst::StdErr => eprintln!("{}", &data),
-            conf::Dst::File { path } => fs::write(path, data).await?,
-            conf::Dst::X11RootWindowName => {
-                if self.x11.is_none() {
-                    self.x11 = Some(X11::init()?);
+    async fn output_data(&mut self, data: &str) {
+        let result: anyhow::Result<()> = async {
+            match self.conf.get_dst() {
+                conf::Dst::StdOut => println!("{}", &data),
+                conf::Dst::StdErr => eprintln!("{}", &data),
+                conf::Dst::File { path } => fs::write(path, data).await?,
+                conf::Dst::X11RootWindowName => {
+                    if self.x11.is_none() {
+                        self.x11 = Some(X11::init()?);
+                    }
+                    let x11 = self.x11.take().unwrap_or_else(|| {
+                        unreachable!(
+                            "x11 failure shoudl have caused a return above."
+                        );
+                    });
+                    x11.set_root_window_name(&data)?;
+                    self.x11.replace(x11);
                 }
-                let x11 = self.x11.take().unwrap_or_else(|| {
-                    unreachable!(
-                        "x11 failure shoudl have caused a return above."
-                    );
-                });
-                x11.set_root_window_name(&data)?;
-                self.x11.replace(x11);
             }
+            Ok(())
         }
-        Ok(())
+        .await;
+        if let Err(error) = result {
+            tracing::error!(?error, "Output failed");
+        }
     }
 
     async fn on(&mut self) -> anyhow::Result<()> {
@@ -201,16 +208,34 @@ impl Server {
     }
 
     async fn off(&mut self) -> anyhow::Result<()> {
-        self.bar.clear_all();
-        for mut feed in self.feeds.drain(0..) {
-            feed.stop().await?;
+        let mut feeds: Vec<Feed> = Vec::new();
+        mem::swap(self.feeds.as_mut() as &mut Vec<Feed>, feeds.as_mut());
+        let mut stops = FuturesUnordered::new();
+        for (pos, feed) in feeds.iter_mut().enumerate() {
+            stops.push(
+                async move { (pos, feed.name.clone(), feed.stop().await) },
+            );
+        }
+        while let Some((pos, name, result)) = stops.next().await {
+            match result {
+                Err(error) => {
+                    tracing::error!(?error, pos, name, "Feed stop failure.");
+                }
+                Ok(()) => {
+                    tracing::info!(pos, name, "Feed stop success.");
+                }
+            }
+            self.bar.clear(pos);
+            self.output().await;
         }
         for timer_opt in self.expiration_timers.drain(0..) {
             timer_opt.map(|timer| timer.abort());
         }
         self.output_timer.take().map(|timer| timer.abort());
-        self.output_blank().await?;
+        self.output_blank().await;
         self.x11.take();
+        debug_assert!(self.feeds.is_empty());
+        debug_assert!(self.expiration_timers.is_empty());
         Ok(())
     }
 
@@ -247,9 +272,7 @@ impl Server {
                         "Output msg arrived without being scheduled."
                     )
                 });
-                if let Err(error) = self.output().await {
-                    tracing::error!(?error, "Failed to output.");
-                }
+                self.output().await
             }
             Msg::On(reply_tx) => {
                 let result = self.on().await;
