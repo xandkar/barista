@@ -83,7 +83,9 @@ impl Feed {
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Stopping");
         self.proc.kill().await?;
-        tracing::debug!("Child proc killed.");
+        tracing::debug!("Child proc killed. Waiting for exit.");
+        self.proc.wait().await?;
+        tracing::debug!("Child proc exited.");
 
         // XXX std(out/err) _should_ exit on kill, but some children misbehave
         //     and have to be cancelled.
