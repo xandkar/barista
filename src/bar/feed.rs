@@ -3,14 +3,13 @@ use std::{
     process::Stdio,
 };
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncWriteExt},
     process::{self, Command},
     task::JoinHandle,
 };
-use tokio_util::sync::CancellationToken;
 use tracing::{info_span, Instrument};
 
 use crate::{bar, conf};
@@ -19,7 +18,7 @@ use crate::{bar, conf};
 pub struct Feed {
     pub name: String,
     proc: process::Child,
-    life: CancellationToken,
+    pgid: nix::unistd::Pid,
     out: Option<JoinHandle<anyhow::Result<()>>>,
     err: Option<JoinHandle<anyhow::Result<()>>>,
 }
@@ -42,37 +41,40 @@ impl Feed {
             .current_dir(dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .process_group(0) // XXX Sets PGID to PID.
             .spawn()
             .context(format!(
                 "Failed to spawn feed. Dir: {:?}. Feed: {:?}",
                 dir, cfg,
             ))?;
+
+        let pid = proc.id().ok_or(anyhow!(
+            "Failed to get child process PID for feed: {:?}",
+            cfg
+        ))?;
+        let pid = nix::unistd::Pid::from_raw(pid as i32);
+
         let stdout = proc.stdout.take().unwrap_or_else(|| {
             unreachable!("stdout not requested at process spawn.")
         });
         let stderr = proc.stderr.take().unwrap_or_else(|| {
             unreachable!("stderr not requested at process spawn.")
         });
-        let life = CancellationToken::new();
         let feed_span = info_span!("feed", name = cfg.name);
         let out = tokio::spawn(
-            route_out(stdout, pos, dst, life.clone())
+            route_out(stdout, pos, dst)
                 .instrument(feed_span.clone())
                 .in_current_span(),
         );
         let err = tokio::spawn(
-            route_err(
-                stderr,
-                dir.join(conf::FEED_LOG_FILE_NAME),
-                life.clone(),
-            )
-            .instrument(feed_span.clone())
-            .in_current_span(),
+            route_err(stderr, dir.join(conf::FEED_LOG_FILE_NAME))
+                .instrument(feed_span.clone())
+                .in_current_span(),
         );
         let selph = Self {
             name: cfg.name.to_string(),
             proc,
-            life,
+            pgid: pid, // XXX Assuming Command.process_group(0) was called.
             out: Some(out),
             err: Some(err),
         };
@@ -82,14 +84,19 @@ impl Feed {
     #[tracing::instrument(name = "feed_stop", skip_all, fields(name = self.name))]
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Stopping");
+
+        nix::sys::signal::killpg(
+            self.pgid,
+            nix::sys::signal::Signal::SIGKILL,
+        )
+        .context(format!("Failed to kill process group for: {:?}", self))?;
+        tracing::debug!("Process group killed.");
+
         self.proc.kill().await?;
         tracing::debug!("Child proc killed. Waiting for exit.");
+
         self.proc.wait().await?;
         tracing::debug!("Child proc exited.");
-
-        // XXX std(out/err) _should_ exit on kill, but some children misbehave
-        //     and have to be cancelled.
-        self.life.cancel();
 
         self.out
             .take()
@@ -113,31 +120,14 @@ async fn route_out(
     stdout: process::ChildStdout,
     pos: usize,
     dst_tx: bar::server::ApiSender,
-    life: CancellationToken,
 ) -> anyhow::Result<()> {
     tracing::info!("Starting.");
     let mut lines = tokio::io::BufReader::new(stdout).lines();
-    loop {
-        tokio::select! {
-            _ = life.cancelled() => {
-                tracing::warn!("Cancelled.");
-                break;
-            }
-            line_opt_res = lines.next_line() => {
-                let line_opt = line_opt_res?;
-                match line_opt {
-                    None => {
-                        tracing::debug!("Closed");
-                        break;
-                    },
-                    Some(line) => {
-                        tracing::debug!(?line, "New");
-                        bar::server::input(&dst_tx, pos, line).await?;
-                    }
-                }
-            }
-        }
+    while let Some(line) = lines.next_line().await? {
+        tracing::debug!(?line, "New");
+        bar::server::input(&dst_tx, pos, line).await?;
     }
+    tracing::debug!("Closed. Exiting.");
     tracing::debug!("Exiting.");
     Ok(())
 }
@@ -146,7 +136,6 @@ async fn route_out(
 async fn route_err(
     err: process::ChildStderr,
     dst: PathBuf,
-    life: CancellationToken,
 ) -> anyhow::Result<()> {
     tracing::info!("Starting.");
     async {
@@ -158,30 +147,13 @@ async fn route_err(
             .open(dst)
             .await?;
         let mut lines = tokio::io::BufReader::new(err).lines();
-        loop {
-            tokio::select! {
-                _ = life.cancelled() => {
-                    tracing::warn!("Cancelled");
-                    break;
-                }
-                line_opt_res = lines.next_line() => {
-                    let line_opt = line_opt_res?;
-                    match line_opt {
-                        None => {
-                            tracing::debug!("Closed");
-                            break;
-                        },
-                        Some(line) => {
-                            tracing::debug!(?line, "New");
-                            stderr_log.write_all(line.as_bytes()).await?;
-                            stderr_log.write_all(&[b'\n']).await?;
-                            stderr_log.flush().await?;
-                        }
-                    }
-                }
-            }
+        while let Some(line) = lines.next_line().await? {
+            tracing::debug!(?line, "New");
+            stderr_log.write_all(line.as_bytes()).await?;
+            stderr_log.write_all(&[b'\n']).await?;
+            stderr_log.flush().await?;
         }
-        tracing::debug!("Exiting");
+        tracing::debug!("Closed. Exiting.");
         Ok::<(), anyhow::Error>(())
     }
     .await

@@ -1,0 +1,5 @@
+# https://doc.rust-lang.org/cargo/reference/config.html
+
+[build]
+# XXX To enable tokio::process::Command::process_group
+rustflags = ["--cfg", "tokio_unstable"]
