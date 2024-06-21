@@ -21,6 +21,7 @@ pub struct Feed {
     dir: PathBuf,
     log: PathBuf,
     proc: process::Child,
+    pid: nix::unistd::Pid,
     pgid: nix::unistd::Pid,
     out: Option<JoinHandle<anyhow::Result<()>>>,
     last_output: Option<SystemTime>,
@@ -41,6 +42,10 @@ impl Feed {
 
     pub fn get_last_output_time(&self) -> Option<SystemTime> {
         self.last_output
+    }
+
+    pub fn get_pid(&self) -> u32 {
+        self.pid.as_raw().unsigned_abs()
     }
 
     pub fn get_pgid(&self) -> u32 {
@@ -114,6 +119,7 @@ impl Feed {
             dir,
             log: log_file_path,
             proc,
+            pid,
             pgid: pid, // XXX Assuming Command.process_group(0) was called.
             out: Some(out),
             last_output: None,

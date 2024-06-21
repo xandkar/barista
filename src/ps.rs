@@ -47,6 +47,21 @@ pub fn groups(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     groups
 }
 
+pub fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
+    let mut parent2children: HashMap<u32, HashSet<u32>> = HashMap::new();
+    for proc in procs {
+        let parent = proc.ppid;
+        let child = proc.pid;
+        parent2children
+            .entry(parent)
+            .and_modify(|children| {
+                children.insert(child);
+            })
+            .or_insert(HashSet::from([child]));
+    }
+    parent2children
+}
+
 async fn exec(cmd: &str, args: &[&str]) -> anyhow::Result<String> {
     use std::process::Output;
 

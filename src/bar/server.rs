@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     mem,
     path::{Path, PathBuf},
     result,
@@ -254,6 +253,7 @@ impl Server {
             (procs, _) => {
                 let ps_list = ps::list().await?;
                 let mut pgroups = ps::groups(ps_list.as_slice());
+                let mut children = ps::children(ps_list.as_slice());
                 let mut stati = Vec::new();
                 for (pos, cfg) in self.conf.feeds.iter().enumerate() {
                     let proc = &procs[pos];
@@ -293,9 +293,10 @@ impl Server {
                                 .ok()
                         })
                         .flatten();
-                    let log = match fs::read_to_string(&log_file).await {
+                    let log_lines = match fs::read_to_string(&log_file).await
+                    {
                         Ok(log) => {
-                            log.lines().map(|line| line.to_string()).collect()
+                            log.lines().map(|line| line.to_string()).count()
                         }
                         Err(err) => {
                             tracing::error!(
@@ -303,13 +304,21 @@ impl Server {
                                 &log_file,
                                 &err
                             );
-                            Vec::new()
+                            0
                         }
                     };
-                    let pgroup: HashSet<u32> =
-                        // Removing to reuse existing group set allocation,
-                        // since we'll never look it up more than once anyway.
-                        pgroups.remove(&proc.get_pgid()).unwrap_or_default();
+
+                    // Removing to reuse existing group set allocation,
+                    // since we'll never look it up more than once anyway.
+                    let pgroup = pgroups
+                        .remove(&proc.get_pgid())
+                        .unwrap_or_default()
+                        .len();
+                    let pchildren: usize = children
+                        .remove(&proc.get_pid())
+                        .unwrap_or_default()
+                        .len();
+
                     let feed_status = bar::status::Feed {
                         position: pos + 1,
                         name: cfg.name.to_string(),
@@ -318,8 +327,9 @@ impl Server {
                         age_of_output,
                         age_of_log,
                         log_size_bytes,
-                        log,
+                        log_lines,
                         pgroup,
+                        pchildren,
                     };
                     stati.push(feed_status);
                 }
