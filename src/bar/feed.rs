@@ -1,6 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    time::SystemTime,
 };
 
 use anyhow::{anyhow, Context};
@@ -16,36 +17,61 @@ use crate::{bar, conf};
 
 #[derive(Debug)]
 pub struct Feed {
-    pub name: String,
+    name: String,
+    dir: PathBuf,
+    log: PathBuf,
     proc: process::Child,
     pgid: nix::unistd::Pid,
     out: Option<JoinHandle<anyhow::Result<()>>>,
     err: Option<JoinHandle<anyhow::Result<()>>>,
+    last_output: Option<SystemTime>,
 }
 
 impl Feed {
+    pub fn get_name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn get_dir_path(&self) -> &Path {
+        self.dir.as_path()
+    }
+
+    pub fn get_log_path(&self) -> &Path {
+        self.log.as_path()
+    }
+
+    pub fn get_last_output_time(&self) -> Option<SystemTime> {
+        self.last_output
+    }
+
+    pub fn set_last_output_time(&mut self) {
+        self.last_output = Some(SystemTime::now())
+    }
+
     pub async fn start(
         cfg: &conf::Feed,
         dir: &Path,
         pos: usize,
         dst: bar::server::ApiSender,
     ) -> anyhow::Result<Self> {
+        let dir = dir.to_path_buf();
+        let log = dir.join(conf::FEED_LOG_FILE_NAME);
         fs::create_dir_all(&dir).await.context(format!(
             "Failed to create all directories in path: {:?}",
-            dir
+            &dir
         ))?;
         let shell = cfg.shell.clone().unwrap_or(conf::default_shell());
         let mut proc = Command::new(shell)
             .arg("-c") // FIXME Some shells may use a different argument flag?
             .arg(&cfg.cmd)
-            .current_dir(dir)
+            .current_dir(&dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0) // XXX Sets PGID to PID.
             .spawn()
             .context(format!(
                 "Failed to spawn feed. Dir: {:?}. Feed: {:?}",
-                dir, cfg,
+                &dir, cfg,
             ))?;
 
         let pid = proc.id().ok_or(anyhow!(
@@ -67,16 +93,19 @@ impl Feed {
                 .in_current_span(),
         );
         let err = tokio::spawn(
-            route_err(stderr, dir.join(conf::FEED_LOG_FILE_NAME))
+            route_err(stderr, log.clone())
                 .instrument(feed_span.clone())
                 .in_current_span(),
         );
         let selph = Self {
             name: cfg.name.to_string(),
+            dir,
+            log,
             proc,
             pgid: pid, // XXX Assuming Command.process_group(0) was called.
             out: Some(out),
             err: Some(err),
+            last_output: None,
         };
         Ok(selph)
     }

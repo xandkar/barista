@@ -9,7 +9,7 @@ use tarpc::{
 };
 use tokio::net::UnixStream;
 
-use crate::{conf, control};
+use crate::{bar, conf, control};
 
 pub struct Client {
     client: control::BarCtlClient,
@@ -47,8 +47,27 @@ impl Client {
         Ok(())
     }
 
-    pub async fn status(&self) -> anyhow::Result<()> {
-        self.client.status(self.ctx).await??;
+    pub async fn status(&self, machine: bool) -> anyhow::Result<()> {
+        let status = match self.client.status(self.ctx).await {
+            Ok(Ok(status)) => status,
+            Ok(Err(error)) => {
+                tracing::error!(?error, "Server failed to compute status.");
+                bar::status::Status::default()
+            }
+            Err(error) => {
+                tracing::error!(
+                    ?error,
+                    "Failed to communicate with the server."
+                );
+                bar::status::Status::default()
+            }
+        };
+        let audience = if machine {
+            bar::status::Audience::Machine
+        } else {
+            bar::status::Audience::Human
+        };
+        println!("{}", status.to_str(audience));
         Ok(())
     }
 

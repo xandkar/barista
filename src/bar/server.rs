@@ -2,7 +2,7 @@ use std::{
     mem,
     path::{Path, PathBuf},
     result,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use futures_util::{stream::FuturesUnordered, StreamExt};
@@ -17,7 +17,7 @@ use tokio::{
 use tracing::Instrument;
 
 use crate::{
-    bar::feed::Feed,
+    bar::{self, feed::Feed},
     conf::{self, Conf},
     x11::X11,
 };
@@ -50,7 +50,7 @@ pub struct Api {
 enum Msg {
     On(oneshot::Sender<anyhow::Result<()>>),
     Off(oneshot::Sender<anyhow::Result<()>>),
-    Status(oneshot::Sender<anyhow::Result<()>>),
+    Status(oneshot::Sender<anyhow::Result<bar::status::Status>>),
     Reload(oneshot::Sender<anyhow::Result<()>>),
     Expiration { pos: usize },
     Input { pos: usize, data: String },
@@ -75,13 +75,13 @@ pub async fn off(api_tx: ApiSender) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn status(api_tx: ApiSender) -> ApiResult<()> {
+pub async fn status(api_tx: ApiSender) -> ApiResult<bar::status::Status> {
     let (reply_tx, reply_rx) = oneshot::channel();
     api_tx.send(Api {
         msg: Msg::Status(reply_tx),
     })?;
-    reply_rx.await??;
-    Ok(())
+    let status = reply_rx.await??;
+    Ok(status)
 }
 
 pub async fn reload(api_tx: ApiSender) -> ApiResult<()> {
@@ -212,9 +212,9 @@ impl Server {
         mem::swap(self.feeds.as_mut() as &mut Vec<Feed>, feeds.as_mut());
         let mut stops = FuturesUnordered::new();
         for (pos, feed) in feeds.iter_mut().enumerate() {
-            stops.push(
-                async move { (pos, feed.name.clone(), feed.stop().await) },
-            );
+            stops.push(async move {
+                (pos, feed.get_name().to_string(), feed.stop().await)
+            });
         }
         while let Some((pos, name, result)) = stops.next().await {
             match result {
@@ -246,8 +246,60 @@ impl Server {
         Ok(())
     }
 
-    async fn status(&mut self) -> anyhow::Result<()> {
-        todo!("status")
+    async fn status(&mut self) -> anyhow::Result<bar::status::Status> {
+        let status = match (&self.feeds[..], &self.expiration_timers[..]) {
+            ([], []) => bar::status::Status::UpOff,
+            (procs, _) => {
+                let mut stati = Vec::new();
+                for (pos, cfg) in self.conf.feeds.iter().enumerate() {
+                    let proc = &procs[pos];
+                    let log_file = proc.get_log_path();
+                    let log_mtime = crate::fs::mtime(&log_file).await?;
+                    let log_size_bytes =
+                        crate::fs::size_in_bytes(&log_file).await?;
+                    let log = match fs::read_to_string(&log_file).await {
+                        Ok(log) => {
+                            log.lines().map(|line| line.to_string()).collect()
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                "Failed to read log file: {:?}. Error: {:?}",
+                                &log_file,
+                                &err
+                            );
+                            Vec::new()
+                        }
+                    };
+                    let now = SystemTime::now();
+                    let feed_status = bar::status::Feed {
+                        position: pos + 1,
+                        name: cfg.name.to_string(),
+                        dir: proc.get_dir_path().to_owned(),
+                        // is_running: true, // TODO Check PID in ps output.
+                        age_of_output: proc.get_last_output_time().and_then(
+                            |last| {
+                                now.duration_since(last)
+                                    .map_err(|error| {
+                                        tracing::warn!(
+                                            ?error,
+                                            "Last output is from the future. \
+                                            This far away: {}",
+                                            humantime::format_duration(error.duration())
+                                        );
+                                    })
+                                    .ok()
+                            },
+                        ),
+                        age_of_log: now.duration_since(log_mtime)?,
+                        log_size_bytes,
+                        log,
+                    };
+                    stati.push(feed_status);
+                }
+                bar::status::Status::UpOn { feeds: stati }
+            }
+        };
+        Ok(status)
     }
 
     async fn handle(&mut self, msg: Msg) -> anyhow::Result<()> {
@@ -265,6 +317,7 @@ impl Server {
                 self.reschedule_expiration(pos);
                 self.bar.set(pos, &data);
                 self.ensure_output_scheduled();
+                self.feeds[pos].set_last_output_time();
             }
             Msg::Output => {
                 self.output_timer.take().unwrap_or_else(|| {

@@ -36,10 +36,13 @@ impl control::BarCtl for BarCtlServer {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn status(self, _: context::Context) -> control::Result<()> {
+    async fn status(
+        self,
+        _: context::Context,
+    ) -> control::Result<bar::status::Status> {
         tracing::debug!("Received status req.");
-        bar::server::status(self.bar_tx).await?;
-        Ok(())
+        let status = bar::server::status(self.bar_tx).await?;
+        Ok(status)
     }
 
     #[tracing::instrument(skip_all)]

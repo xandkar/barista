@@ -42,7 +42,11 @@ enum Cmd {
     Off,
 
     /// Ask the server for its current status.
-    Status,
+    Status {
+        /// Machine-friendly output - i.e. no spaces in table cells.
+        #[clap(short, long, default_value_t = false)]
+        machine: bool,
+    },
 
     /// Ask the server to:
     /// (1) turn-off feeds
@@ -135,7 +139,7 @@ async fn client(
         }
         Cmd::On => client.on().await,
         Cmd::Off => client.off().await,
-        Cmd::Status => client.status().await,
+        Cmd::Status { machine } => client.status(*machine).await,
         Cmd::Reload => client.reload().await,
     }
 }

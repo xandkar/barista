@@ -26,6 +26,6 @@ pub type Result<T> = result::Result<T, Error>;
 pub trait BarCtl {
     async fn on() -> Result<()>;
     async fn off() -> Result<()>;
-    async fn status() -> Result<()>;
+    async fn status() -> Result<bar::status::Status>;
     async fn reload() -> Result<()>;
 }

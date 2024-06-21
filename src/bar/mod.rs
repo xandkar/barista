@@ -1,8 +1,9 @@
-use crate::conf::Conf;
-
 pub mod server;
+pub mod status;
 
 mod feed;
+
+use crate::conf::Conf;
 
 pub struct Bar {
     left_pad: String,
