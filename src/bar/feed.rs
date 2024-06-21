@@ -43,6 +43,10 @@ impl Feed {
         self.last_output
     }
 
+    pub fn get_pgid(&self) -> u32 {
+        self.pgid.as_raw().unsigned_abs()
+    }
+
     pub fn set_last_output_time(&mut self) {
         self.last_output = Some(SystemTime::now())
     }

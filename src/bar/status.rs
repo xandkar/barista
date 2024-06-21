@@ -1,6 +1,6 @@
 // Status of the status bar :)
 
-use std::{path::PathBuf, time::Duration};
+use std::{collections::HashSet, path::PathBuf, time::Duration};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Feed {
@@ -12,6 +12,7 @@ pub struct Feed {
     pub age_of_log: Option<Duration>,
     pub log_size_bytes: u64,
     pub log: Vec<String>,
+    pub pgroup: HashSet<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -50,6 +51,7 @@ impl Status {
                     "LAST_LOGGED",
                     "LOG_SIZE",
                     "LOG_LINES",
+                    "PROC_GROUP_SIZE",
                 ]);
                 for Feed {
                     position,
@@ -60,6 +62,7 @@ impl Status {
                     age_of_log,
                     log_size_bytes,
                     log,
+                    pgroup: pgrp,
                 } in feeds.iter()
                 {
                     let log_size = match audience {
@@ -77,6 +80,7 @@ impl Status {
                         &duration_fmt(*age_of_log, audience),
                         &log_size,
                         &log.len().to_string(),
+                        &pgrp.len().to_string(),
                     ]);
                 }
                 format!("{}", table)

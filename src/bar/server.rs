@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     mem,
     path::{Path, PathBuf},
     result,
@@ -19,6 +20,7 @@ use tracing::Instrument;
 use crate::{
     bar::{self, feed::Feed},
     conf::{self, Conf},
+    ps,
     x11::X11,
 };
 
@@ -250,6 +252,8 @@ impl Server {
         let status = match (&self.feeds[..], &self.expiration_timers[..]) {
             ([], []) => bar::status::Status::UpOff,
             (procs, _) => {
+                let ps_list = ps::list().await?;
+                let mut pgroups = ps::groups(ps_list.as_slice());
                 let mut stati = Vec::new();
                 for (pos, cfg) in self.conf.feeds.iter().enumerate() {
                     let proc = &procs[pos];
@@ -302,6 +306,10 @@ impl Server {
                             Vec::new()
                         }
                     };
+                    let pgroup: HashSet<u32> =
+                        // Removing to reuse existing group set allocation,
+                        // since we'll never look it up more than once anyway.
+                        pgroups.remove(&proc.get_pgid()).unwrap_or_default();
                     let feed_status = bar::status::Feed {
                         position: pos + 1,
                         name: cfg.name.to_string(),
@@ -311,6 +319,7 @@ impl Server {
                         age_of_log,
                         log_size_bytes,
                         log,
+                        pgroup,
                     };
                     stati.push(feed_status);
                 }
