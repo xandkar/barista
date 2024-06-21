@@ -7,6 +7,7 @@ use tokio::{fs, task::JoinSet};
 use tracing::Instrument;
 
 #[derive(Parser, Debug)]
+#[command(version, about)]
 struct Cli {
     /// Path to the working directory.
     #[clap(short, long, default_value = concat!("~/.", barista::NAME!()))]
