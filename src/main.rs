@@ -102,18 +102,53 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
         .in_current_span(),
     );
     if on {
-        barista::bar::server::on(bar_tx).await?;
+        barista::bar::server::on(&bar_tx).await?;
     }
+    let mut sigterm = tokio::signal::unix::signal(
+        tokio::signal::unix::SignalKind::terminate(),
+    )?;
+    tokio::select! {
+        num_errors = join(&mut siblings) => {
+            tracing::error!(num_errors, "Server workers exited.");
+            if let Err(error) = barista::bar::server::off(&bar_tx).await {
+                // TODO Keep feed proc states globally accessible so that we
+                //      can clean-up even when bar::server task exits.
+                tracing::error!(
+                    ?error,
+                    "Clean shutdown attempt failed - \
+                    orphaned process might be remaining."
+                );
+            }
+            Err(anyhow!("Premature server exit"))
+        },
+        _ = tokio::signal::ctrl_c() => {
+            tracing::warn!("Caught Ctrl+C. Shutting down.");
+            barista::bar::server::off(&bar_tx).await?;
+            Ok(())
+        }
+        _ = sigterm.recv() => {
+            tracing::warn!("Caught SIGTERM. Shutting down.");
+            barista::bar::server::off(&bar_tx).await?;
+            Ok(())
+        }
+    }
+}
+
+async fn join(siblings: &mut JoinSet<anyhow::Result<()>>) -> usize {
+    let mut errors = 0;
     while let Some(join_result) = siblings.join_next().await {
         match join_result {
-            Ok(Ok(())) => unreachable!("Worker exited normally."),
+            Ok(Ok(())) => unreachable!("A server worker exited normally."),
             Ok(Err(error)) => {
+                errors += 1;
                 tracing::error!(?error, "Worker failed.");
             }
             Err(join_error) if join_error.is_panic() => {
+                errors += 1;
                 tracing::error!(?join_error, "Worker paniced.");
             }
             Err(join_error) if join_error.is_cancelled() => {
+                errors += 1;
                 tracing::error!(?join_error, "Worker cancelled.");
             }
             Err(join_error) => {
@@ -130,7 +165,7 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
         }
         siblings.abort_all();
     }
-    Err(anyhow!("Premature server exit"))
+    errors
 }
 
 #[tracing::instrument(skip_all)]

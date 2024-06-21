@@ -58,7 +58,7 @@ enum Msg {
     Output,
 }
 
-pub async fn on(api_tx: ApiSender) -> ApiResult<()> {
+pub async fn on(api_tx: &ApiSender) -> ApiResult<()> {
     let (reply_tx, reply_rx) = oneshot::channel();
     api_tx.send(Api {
         msg: Msg::On(reply_tx),
@@ -67,7 +67,7 @@ pub async fn on(api_tx: ApiSender) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn off(api_tx: ApiSender) -> ApiResult<()> {
+pub async fn off(api_tx: &ApiSender) -> ApiResult<()> {
     let (reply_tx, reply_rx) = oneshot::channel();
     api_tx.send(Api {
         msg: Msg::Off(reply_tx),
@@ -76,7 +76,7 @@ pub async fn off(api_tx: ApiSender) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn status(api_tx: ApiSender) -> ApiResult<bar::status::Status> {
+pub async fn status(api_tx: &ApiSender) -> ApiResult<bar::status::Status> {
     let (reply_tx, reply_rx) = oneshot::channel();
     api_tx.send(Api {
         msg: Msg::Status(reply_tx),
@@ -85,7 +85,7 @@ pub async fn status(api_tx: ApiSender) -> ApiResult<bar::status::Status> {
     Ok(status)
 }
 
-pub async fn reload(api_tx: ApiSender) -> ApiResult<()> {
+pub async fn reload(api_tx: &ApiSender) -> ApiResult<()> {
     let (reply_tx, reply_rx) = oneshot::channel();
     api_tx.send(Api {
         msg: Msg::Reload(reply_tx),

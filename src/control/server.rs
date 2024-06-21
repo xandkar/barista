@@ -24,14 +24,14 @@ impl control::BarCtl for BarCtlServer {
     #[tracing::instrument(skip_all)]
     async fn on(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received start req.");
-        bar::server::on(self.bar_tx).await?;
+        bar::server::on(&self.bar_tx).await?;
         Ok(())
     }
 
     #[tracing::instrument(skip_all)]
     async fn off(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received stop req.");
-        bar::server::off(self.bar_tx).await?;
+        bar::server::off(&self.bar_tx).await?;
         Ok(())
     }
 
@@ -41,14 +41,14 @@ impl control::BarCtl for BarCtlServer {
         _: context::Context,
     ) -> control::Result<bar::status::Status> {
         tracing::debug!("Received status req.");
-        let status = bar::server::status(self.bar_tx).await?;
+        let status = bar::server::status(&self.bar_tx).await?;
         Ok(status)
     }
 
     #[tracing::instrument(skip_all)]
     async fn reload(self, _: context::Context) -> control::Result<()> {
         tracing::debug!("Received reload req.");
-        bar::server::reload(self.bar_tx).await?;
+        bar::server::reload(&self.bar_tx).await?;
         Ok(())
     }
 }
