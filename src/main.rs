@@ -10,11 +10,16 @@ use tracing::Instrument;
 #[command(version, about)]
 struct Cli {
     /// Path to the working directory.
-    #[clap(short, long, default_value = concat!("~/.", barista::NAME!()))]
+    #[clap(long, default_value = concat!("~/.", barista::NAME!()))]
     dir: String,
 
-    #[clap(short, long = "level", default_value_t = tracing::Level::INFO)]
-    log_level: tracing::Level,
+    /// Enables RPC logging. Sets level to DEBUG.
+    #[clap(short, long, default_value_t = false)]
+    debug: bool,
+
+    /// Specify log level. Overrides level set by the debug flag.
+    #[clap(short, long = "log")]
+    log_level: Option<tracing::Level>,
 
     #[clap(short, long, default_value_t = 5.0)]
     timeout: f64,
@@ -59,7 +64,8 @@ impl Cli {
     #[tokio::main]
     #[tracing::instrument(name = "barista", skip_all)]
     async fn run(&self) -> anyhow::Result<()> {
-        tracing::info!(?self, "Starting");
+        barista::tracing::init(self.log_level, self.debug)?;
+        tracing::debug!(?self, "Running");
 
         let dir = expanduser::expanduser(&self.dir).context(format!(
             "Failed to expand tilde in path: {:?}",
@@ -83,6 +89,7 @@ impl Cli {
 
 #[tracing::instrument(skip_all)]
 async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
+    tracing::info!(?dir, backlog, on, "Starting");
     // TODO Handle Ctrl+C. Clear bar on exit.
     let mut siblings = JoinSet::new();
     let bar_tx = barista::bar::server::start(&mut siblings, dir).await?;
@@ -132,6 +139,7 @@ async fn client(
     dir: &Path,
     timeout: Duration,
 ) -> anyhow::Result<()> {
+    tracing::debug!(?cmd, ?dir, ?timeout, "Starting");
     let client = barista::control::client::Client::new(&dir, timeout).await?;
     match cmd {
         Cmd::Server { .. } => {
@@ -145,7 +153,5 @@ async fn client(
 }
 
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    barista::tracing::init(cli.log_level)?;
-    cli.run()
+    Cli::parse().run()
 }
