@@ -9,7 +9,7 @@ pub struct Feed {
     pub dir: PathBuf,
     // pub is_running: bool,
     pub age_of_output: Option<Duration>,
-    pub age_of_log: Duration,
+    pub age_of_log: Option<Duration>,
     pub log_size_bytes: u64,
     pub log: Vec<String>,
 }
@@ -74,7 +74,7 @@ impl Status {
                         dir.to_string_lossy().as_ref(),
                         // is_running.then_some("YES").unwrap_or("NO"),
                         &duration_fmt(*age_of_output, audience),
-                        &duration_fmt(Some(*age_of_log), audience),
+                        &duration_fmt(*age_of_log, audience),
                         &log_size,
                         &log.len().to_string(),
                     ]);

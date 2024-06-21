@@ -257,6 +257,38 @@ impl Server {
                     let log_mtime = crate::fs::mtime(&log_file).await?;
                     let log_size_bytes =
                         crate::fs::size_in_bytes(&log_file).await?;
+                    let now = SystemTime::now();
+                    let age_of_output =
+                        proc.get_last_output_time().and_then(|last| {
+                            now.duration_since(last)
+                                .map_err(|error| {
+                                    tracing::warn!(
+                                        ?error,
+                                        "Last output is from the future. \
+                                         This far away: {}",
+                                        humantime::format_duration(
+                                            error.duration()
+                                        )
+                                    );
+                                })
+                                .ok()
+                        });
+                    let age_of_log = (log_size_bytes > 0)
+                        .then(|| {
+                            now.duration_since(log_mtime)
+                                .map_err(|error| {
+                                    tracing::warn!(
+                                        ?error,
+                                        "Log was modified in the future. \
+                                         This far away: {}",
+                                        humantime::format_duration(
+                                            error.duration()
+                                        )
+                                    );
+                                })
+                                .ok()
+                        })
+                        .flatten();
                     let log = match fs::read_to_string(&log_file).await {
                         Ok(log) => {
                             log.lines().map(|line| line.to_string()).collect()
@@ -270,27 +302,13 @@ impl Server {
                             Vec::new()
                         }
                     };
-                    let now = SystemTime::now();
                     let feed_status = bar::status::Feed {
                         position: pos + 1,
                         name: cfg.name.to_string(),
                         dir: proc.get_dir_path().to_owned(),
                         // is_running: true, // TODO Check PID in ps output.
-                        age_of_output: proc.get_last_output_time().and_then(
-                            |last| {
-                                now.duration_since(last)
-                                    .map_err(|error| {
-                                        tracing::warn!(
-                                            ?error,
-                                            "Last output is from the future. \
-                                            This far away: {}",
-                                            humantime::format_duration(error.duration())
-                                        );
-                                    })
-                                    .ok()
-                            },
-                        ),
-                        age_of_log: now.duration_since(log_mtime)?,
+                        age_of_output,
+                        age_of_log,
                         log_size_bytes,
                         log,
                     };
