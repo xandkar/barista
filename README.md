@@ -58,8 +58,9 @@ Normally you'd run `barista server &` from `~/.xinitrc` (or similar). This will
 run the commands you specified in config and set the bar at intervals you
 specified in config.
 
-While it is running, you can ask it for changes and status from any other
-terminal (they communicate via a Unix domain socket: `~/.barista/socket`):
+While the barista server is running, you can ask it for changes and status from
+any other terminal (they communicate via a Unix domain socket:
+`~/.barista/socket`):
 
 1. `barista reload` to reload configuration after changing it at runtime
 2. `barista status` to see how each command is doing (last update, etc)
