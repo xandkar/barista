@@ -7,9 +7,9 @@ use std::{
 use anyhow::{anyhow, Context};
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, AsyncWriteExt},
+    io::AsyncBufReadExt,
     process::{self, Command},
-    task::JoinHandle,
+    task::{spawn_blocking, JoinHandle},
 };
 use tracing::{info_span, Instrument};
 
@@ -23,7 +23,6 @@ pub struct Feed {
     proc: process::Child,
     pgid: nix::unistd::Pid,
     out: Option<JoinHandle<anyhow::Result<()>>>,
-    err: Option<JoinHandle<anyhow::Result<()>>>,
     last_output: Option<SystemTime>,
 }
 
@@ -55,18 +54,35 @@ impl Feed {
         dst: bar::server::ApiSender,
     ) -> anyhow::Result<Self> {
         let dir = dir.to_path_buf();
-        let log = dir.join(conf::FEED_LOG_FILE_NAME);
         fs::create_dir_all(&dir).await.context(format!(
             "Failed to create all directories in path: {:?}",
             &dir
         ))?;
+        let log_file_path = dir.join(conf::FEED_LOG_FILE_NAME);
+        let log_file: std::fs::File = {
+            // XXX Can't use tokio::fs::File because std::process::Stdio::from
+            //     can't work with it and tokio offers no analogue. Possible
+            //     workarounds:
+            //     a. use std inside spawn_blocking;
+            //     b. use tokio and then unsafely convert to raw fd
+            //        and then use Stdio::from_raw_fd.
+            let log_file_path = log_file_path.clone();
+            spawn_blocking(move || {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .create(true)
+                    .open(&log_file_path)
+            })
+            .await??
+        };
         let shell = cfg.shell.clone().unwrap_or(conf::default_shell());
         let mut proc = Command::new(shell)
             .arg("-c") // FIXME Some shells may use a different argument flag?
             .arg(&cfg.cmd)
             .current_dir(&dir)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::from(log_file))
             .process_group(0) // XXX Sets PGID to PID.
             .spawn()
             .context(format!(
@@ -83,28 +99,19 @@ impl Feed {
         let stdout = proc.stdout.take().unwrap_or_else(|| {
             unreachable!("stdout not requested at process spawn.")
         });
-        let stderr = proc.stderr.take().unwrap_or_else(|| {
-            unreachable!("stderr not requested at process spawn.")
-        });
         let feed_span = info_span!("feed", name = cfg.name);
         let out = tokio::spawn(
             route_out(stdout, pos, dst)
                 .instrument(feed_span.clone())
                 .in_current_span(),
         );
-        let err = tokio::spawn(
-            route_err(stderr, log.clone())
-                .instrument(feed_span.clone())
-                .in_current_span(),
-        );
         let selph = Self {
             name: cfg.name.to_string(),
             dir,
-            log,
+            log: log_file_path,
             proc,
             pgid: pid, // XXX Assuming Command.process_group(0) was called.
             out: Some(out),
-            err: Some(err),
             last_output: None,
         };
         Ok(selph)
@@ -133,12 +140,6 @@ impl Feed {
             .await??;
         tracing::debug!("stdout router exited");
 
-        self.err
-            .take()
-            .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
-            .await??;
-        tracing::debug!("stderr router exited");
-
         tracing::info!("Stopped.");
         Ok(())
     }
@@ -159,32 +160,4 @@ async fn route_out(
     tracing::debug!("Closed. Exiting.");
     tracing::debug!("Exiting.");
     Ok(())
-}
-
-#[tracing::instrument(name = "err", skip_all)]
-async fn route_err(
-    err: process::ChildStderr,
-    dst: PathBuf,
-) -> anyhow::Result<()> {
-    tracing::info!("Starting.");
-    async {
-        let dst = dst.clone();
-        let mut stderr_log = fs::OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(dst)
-            .await?;
-        let mut lines = tokio::io::BufReader::new(err).lines();
-        while let Some(line) = lines.next_line().await? {
-            tracing::debug!(?line, "New");
-            stderr_log.write_all(line.as_bytes()).await?;
-            stderr_log.write_all(&[b'\n']).await?;
-            stderr_log.flush().await?;
-        }
-        tracing::debug!("Closed. Exiting.");
-        Ok::<(), anyhow::Error>(())
-    }
-    .await
-    .with_context(|| format!("route_err failed. dst: {:?}", &dst))
 }

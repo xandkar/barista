@@ -35,6 +35,8 @@ Each slot is given a TTL, after which, if there was no update, the slot is
 cleared - helping you spot broken commands and not fool yourself with stale
 data.
 
+Each command's `stderr` is redirected to `~/.barista/feeds/$i-$name/log`.
+
 Install
 -------------------------------------------------------------------------------
 
