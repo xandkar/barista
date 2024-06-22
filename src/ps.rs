@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    num::ParseIntError,
-};
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context};
 
@@ -19,10 +16,10 @@ pub async fn list() -> anyhow::Result<Vec<Info>> {
     for line in out.lines().skip(1) {
         match line
             .split_whitespace()
-            .map(|num| num.parse())
-            .collect::<Vec<Result<u32, ParseIntError>>>()[..]
+            .filter_map(|num| num.parse().ok())
+            .collect::<Vec<u32>>()[..]
         {
-            [Ok(pid), Ok(ppid), Ok(pgrp)] => {
+            [pid, ppid, pgrp] => {
                 let info = Info { pid, ppid, pgrp };
                 list.push(info);
             }
