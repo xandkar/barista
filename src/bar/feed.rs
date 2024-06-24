@@ -4,7 +4,7 @@ use std::{
     time::SystemTime,
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use tokio::{
     fs,
     io::AsyncBufReadExt,
@@ -19,7 +19,8 @@ use crate::{bar, conf};
 pub struct Feed {
     name: String,
     dir: PathBuf,
-    log: PathBuf,
+    log_file: PathBuf,
+    pid_file: PathBuf,
     proc: process::Child,
     pid: nix::unistd::Pid,
     pgid: nix::unistd::Pid,
@@ -37,7 +38,7 @@ impl Feed {
     }
 
     pub fn get_log_path(&self) -> &Path {
-        self.log.as_path()
+        self.log_file.as_path()
     }
 
     pub fn get_last_output_time(&self) -> Option<SystemTime> {
@@ -103,21 +104,25 @@ impl Feed {
             "Failed to get child process PID for feed: {:?}",
             cfg
         ))?;
+        let pid_file = dir.join(conf::FEED_PID_FILE_NAME);
+        fs::write(&pid_file, pid.to_string())
+            .await
+            .context(format!("Failed to write PID file: {:?}", &pid_file))?;
         let pid = nix::unistd::Pid::from_raw(pid as i32);
 
         let stdout = proc.stdout.take().unwrap_or_else(|| {
             unreachable!("stdout not requested at process spawn.")
         });
-        let feed_span = info_span!("feed", name = cfg.name);
         let out = tokio::spawn(
             route_out(stdout, pos, dst)
-                .instrument(feed_span.clone())
+                .instrument(info_span!("feed", name = cfg.name))
                 .in_current_span(),
         );
         let selph = Self {
             name: cfg.name.to_string(),
             dir,
-            log: log_file_path,
+            log_file: log_file_path,
+            pid_file,
             proc,
             pid,
             pgid: pid, // XXX Assuming Command.process_group(0) was called.
@@ -149,7 +154,7 @@ impl Feed {
             .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
             .await??;
         tracing::debug!("stdout router exited");
-
+        fs::remove_file(self.pid_file.as_path()).await?;
         tracing::info!("Stopped.");
         Ok(())
     }
@@ -169,5 +174,78 @@ async fn route_out(
     }
     tracing::debug!("Closed. Exiting.");
     tracing::debug!("Exiting.");
+    Ok(())
+}
+
+/// Try to find and kill all previously saved PIDs.
+pub async fn try_kill_all(dir: &Path) -> anyhow::Result<()> {
+    tracing::warn!(
+        ?dir,
+        "Attempting to find and kill PIDs in feed PID files."
+    );
+    let feeds_dir = dir.join(conf::FEEDS_DIR_NAME);
+    let mut feeds_dir_entries = fs::read_dir(&feeds_dir).await?;
+    let mut total: usize = 0;
+    let mut failed: usize = 0;
+    while let Some(entry) = feeds_dir_entries.next_entry().await? {
+        total += 1;
+        let path = entry.path();
+        if let Err(error) = try_kill(entry).await {
+            failed += 1;
+            tracing::error!(
+                ?error,
+                ?path,
+                "Failed to lookup and kill feed process group."
+            )
+        }
+    }
+    if failed > 0 {
+        Err(anyhow!("{} out of {} kill attempts failed.", failed, total))
+    } else {
+        tracing::info!(
+            "Killed all found process groups of previously started feeds."
+        );
+        Ok(())
+    }
+}
+
+async fn try_kill(entry: fs::DirEntry) -> anyhow::Result<()> {
+    let entry_path = entry.path();
+    if !entry
+        .file_type()
+        .await
+        .context(format!(
+            "Failed to check directory entry file type. Path: {:?}",
+            &entry_path
+        ))?
+        .is_dir()
+    {
+        bail!("Non-directory sub-entry: {:?}", &entry_path);
+    }
+    let pid_file = entry_path.join(conf::FEED_PID_FILE_NAME);
+    if !fs::try_exists(&pid_file).await.context(format!(
+        "Failed to check feed PID file existence: {:?}",
+        &pid_file
+    ))? {
+        bail!("Feed PID file not found: {:?}", &pid_file);
+    }
+    tracing::warn!(path = ?pid_file, "Attempting to kill PID from feed PID file.");
+    let pid = fs::read_to_string(&pid_file)
+        .await
+        .context(format!("Failed to read feed PID file: {:?}", &pid_file))?;
+    let pid: u32 = pid
+        .parse()
+        .context(format!("Failed to parse feed PID file: {:?}", &pid_file))?;
+    let pid = nix::unistd::Pid::from_raw(pid as i32);
+    let pgrp = pid;
+    nix::sys::signal::killpg(pgrp, nix::sys::signal::Signal::SIGKILL)
+        .context(format!(
+            "Failed to kill process group: {}. PID: {}. PID file: {:?}.",
+            pgrp, pid, &pid_file
+        ))?;
+    fs::remove_file(&pid_file).await.context(format!(
+        "Failed to remove feed PID file: {:?}",
+        &pid_file
+    ))?;
     Ok(())
 }

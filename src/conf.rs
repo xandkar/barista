@@ -5,6 +5,8 @@ use tokio::fs;
 
 pub const FEEDS_DIR_NAME: &str = "feeds";
 pub const FEED_LOG_FILE_NAME: &str = "log";
+pub const FEED_PID_FILE_NAME: &str = "pid";
+pub const SERVER_PID_FILE_NAME: &str = "pid";
 pub const SOCK_FILE_NAME: &str = "socket";
 pub const CONF_FILE_NAME: &str = "conf.toml";
 pub const DEFAULT_DST: Dst = Dst::X11RootWindowName;

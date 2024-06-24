@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::{anyhow, Context};
+use barista::conf;
 use clap::Parser;
 
 use tokio::{fs, task::JoinSet};
@@ -90,7 +91,6 @@ impl Cli {
 #[tracing::instrument(skip_all)]
 async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
     tracing::info!(?dir, backlog, on, "Starting");
-    // TODO Handle Ctrl+C. Clear bar on exit.
     let mut siblings = JoinSet::new();
     let bar_tx = barista::bar::server::start(&mut siblings, dir).await?;
     siblings.spawn(
@@ -107,31 +107,43 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
     let mut sigterm = tokio::signal::unix::signal(
         tokio::signal::unix::SignalKind::terminate(),
     )?;
-    tokio::select! {
+    let pid_file = dir.join(conf::SERVER_PID_FILE_NAME);
+    fs::write(&pid_file, std::process::id().to_string()).await?;
+    let result = tokio::select! {
         num_errors = join(&mut siblings) => {
             tracing::error!(num_errors, "Server workers exited.");
-            if let Err(error) = barista::bar::server::off(&bar_tx).await {
-                // TODO Keep feed proc states globally accessible so that we
-                //      can clean-up even when bar::server task exits.
-                tracing::error!(
-                    ?error,
-                    "Clean shutdown attempt failed - \
-                    orphaned process might be remaining."
-                );
-            }
+            // TODO Post notification.
             Err(anyhow!("Premature server exit"))
         },
         _ = tokio::signal::ctrl_c() => {
             tracing::warn!("Caught Ctrl+C. Shutting down.");
-            barista::bar::server::off(&bar_tx).await?;
             Ok(())
         }
         _ = sigterm.recv() => {
             tracing::warn!("Caught SIGTERM. Shutting down.");
-            barista::bar::server::off(&bar_tx).await?;
             Ok(())
         }
+    };
+    if let Err(error) = barista::bar::server::off(&bar_tx).await {
+        tracing::error!(
+            ?error,
+            "Clean shutdown attempt failed - \
+            orphaned processes might be remaining. \
+            Attempting to kill PIDs found in feed PID files."
+        );
+        if let Err(error) = barista::bar::feed::try_kill_all(dir).await {
+            tracing::error!(
+                ?error,
+                "Killing feed processes failed - \
+                orphaned processes might still be remaining."
+            );
+        }
     }
+    fs::remove_file(&pid_file).await.context(format!(
+        "Failed to remove main PID file: {:?}",
+        &pid_file
+    ))?;
+    result
 }
 
 async fn join(siblings: &mut JoinSet<anyhow::Result<()>>) -> usize {

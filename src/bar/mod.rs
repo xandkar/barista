@@ -1,7 +1,6 @@
+pub mod feed;
 pub mod server;
 pub mod status;
-
-mod feed;
 
 use crate::conf::Conf;
 
