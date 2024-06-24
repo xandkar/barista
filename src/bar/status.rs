@@ -94,16 +94,20 @@ impl Status {
 }
 
 fn duration_fmt(duration: Option<Duration>, audience: Audience) -> String {
-    // Units smaller than 1 second aren't too human-readable,
-    // so dropping them.
-    let seconds = duration.map(|d| d.as_secs());
-    match (seconds, audience) {
+    match (duration, audience) {
         (None, Audience::Human) => "never".to_string(),
-        (None, Audience::Machine) => "-1".to_string(),
-        (Some(s), Audience::Human) => {
-            humantime::format_duration(Duration::from_secs(s)).to_string()
+        (None, Audience::Machine) => "-1.00".to_string(),
+        (Some(duration), Audience::Human) => {
+            // Units smaller than 1 second aren't too human-readable,
+            // so dropping them.
+            let d = Duration::from_secs(duration.as_secs());
+            humantime::format_duration(d).to_string()
         }
-        (Some(s), Audience::Machine) => s.to_string(),
+        (Some(duration), Audience::Machine) => format!(
+            "{seconds:.precision$}",
+            precision = 2,
+            seconds = duration.as_secs_f64()
+        ),
     }
 }
 
