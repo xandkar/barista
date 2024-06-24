@@ -30,6 +30,25 @@ lines from them and routes to N corresponding slots on the bar:
         ^              ^                        ^
         |              |                        |
     command_1      command_2           ...  command_N
+        |              |                        |
+        v              v                        v
+       +-+            +-+                      +-+
+       | |            | |                      | |
+       |S|            |S|                      |S|
+       |T|            |T|                      |T|
+       |D|            |D|                      |D|
+       |E|            |E|                      |E|
+       |R|            |R|                      |R|
+       |R|            |R|                      |R|
+       | |            | |                      | |
+       |1|            |2|                      |N|
+       | |            | |                      | |
+       +-+            +-+                      +-+
+        |              |                        |
+        v              v                        v
+    l +--------+     +--------+     ...       +--------+
+    o | file_1 |     | file_2 |               | file_N |
+    g +--------+     +--------+     ...       +--------+
 
 Each slot is given a TTL, after which, if there was no update, the slot is
 cleared - helping you spot broken commands and not fool yourself with stale
