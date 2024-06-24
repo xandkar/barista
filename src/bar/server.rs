@@ -183,6 +183,7 @@ impl Server {
         .await;
         if let Err(error) = result {
             tracing::error!(?error, "Output failed");
+            // TODO Post notification.
         }
     }
 
@@ -221,6 +222,7 @@ impl Server {
             match result {
                 Err(error) => {
                     tracing::error!(?error, pos, name, "Feed stop failure.");
+                    // TODO Post notification.
                 }
                 Ok(()) => {
                     tracing::info!(pos, name, "Feed stop success.");
@@ -274,6 +276,7 @@ impl Server {
                                             error.duration()
                                         )
                                     );
+                                    // TODO Post notification.
                                 })
                                 .ok()
                         });
@@ -289,6 +292,7 @@ impl Server {
                                             error.duration()
                                         )
                                     );
+                                    // TODO Post notification.
                                 })
                                 .ok()
                         })
@@ -304,6 +308,7 @@ impl Server {
                                 &log_file,
                                 &err
                             );
+                            // TODO Post notification.
                             0
                         }
                     };
