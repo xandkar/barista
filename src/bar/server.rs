@@ -118,16 +118,22 @@ pub async fn start(
     Ok(tx)
 }
 
-// TODO State enum.
+// TODO Move data fields from Server to appropriate State variants.
+enum State {
+    On,
+    Off,
+}
+
 struct Server {
     self_tx: ApiSender,
     dir: PathBuf,
     conf: Conf,
+    state: State,
     bar: Bar,
     feeds: Vec<Feed>,
     expiration_timers: Vec<Option<JoinHandle<()>>>,
-    output_interval: Duration,
     output_timer: Option<JoinHandle<()>>,
+    output_interval: Duration,
     x11: Option<X11>,
 }
 
@@ -139,6 +145,7 @@ impl Server {
             self_tx,
             dir,
             conf,
+            state: State::Off,
             bar,
             feeds: Vec::new(),
             expiration_timers: Vec::new(),
@@ -207,6 +214,7 @@ impl Server {
             self.reschedule_expiration(pos);
             self.ensure_output_scheduled();
         }
+        self.state = State::On;
         Ok(())
     }
 
@@ -238,6 +246,7 @@ impl Server {
         self.output_timer.take().map(|timer| timer.abort());
         self.output_blank().await;
         self.x11.take();
+        self.state = State::Off;
         debug_assert!(self.feeds.is_empty());
         debug_assert!(self.expiration_timers.is_empty());
         Ok(())
@@ -350,8 +359,16 @@ impl Server {
 
     async fn handle(&mut self, msg: Msg) -> anyhow::Result<()> {
         tracing::debug!(?msg, "Handling message.");
-        match msg {
-            Msg::Expiration { pos } => {
+        match (&self.state, msg) {
+            (
+                State::Off,
+                msg @ (Msg::Expiration { pos: _ }
+                | Msg::Input { pos: _, data: _ }
+                | Msg::Output),
+            ) => {
+                tracing::warn!(?msg, "Ignoring in off state.");
+            }
+            (State::On, Msg::Expiration { pos }) => {
                 self.expiration_timers[pos]
                     .take()
                     .unwrap_or_else(|| unreachable!())
@@ -359,13 +376,13 @@ impl Server {
                 self.bar.expire(pos);
                 self.ensure_output_scheduled();
             }
-            Msg::Input { pos, data } => {
+            (State::On, Msg::Input { pos, data }) => {
                 self.reschedule_expiration(pos);
                 self.bar.set(pos, &data);
                 self.ensure_output_scheduled();
                 self.feeds[pos].set_last_output_time();
             }
-            Msg::Output => {
+            (State::On, Msg::Output) => {
                 self.output_timer.take().unwrap_or_else(|| {
                     unreachable!(
                         "Output msg arrived without being scheduled."
@@ -373,7 +390,17 @@ impl Server {
                 });
                 self.output().await
             }
-            Msg::On(reply_tx) => {
+            (State::On, Msg::On(reply_tx)) => {
+                tracing::warn!("Already on. Ignoring request to turn on.");
+                // TODO Let client know we're already on?
+                reply_tx.send(Ok(())).unwrap_or_else(|error| {
+                    tracing::error!(
+                        ?error,
+                        "Failed to reply. Sender dropped."
+                    )
+                })
+            }
+            (State::Off, Msg::On(reply_tx)) => {
                 let result = self.on().await;
                 reply_tx.send(result).unwrap_or_else(|error| {
                     tracing::error!(
@@ -382,7 +409,7 @@ impl Server {
                     )
                 })
             }
-            Msg::Off(reply_tx) => {
+            (State::On, Msg::Off(reply_tx)) => {
                 let result = self.off().await;
                 reply_tx.send(result).unwrap_or_else(|error| {
                     tracing::error!(
@@ -391,7 +418,17 @@ impl Server {
                     )
                 })
             }
-            Msg::Status(reply_tx) => {
+            (State::Off, Msg::Off(reply_tx)) => {
+                tracing::warn!("Already off. Ignoring request to turn off.");
+                // TODO Let client know we're already off?
+                reply_tx.send(Ok(())).unwrap_or_else(|error| {
+                    tracing::error!(
+                        ?error,
+                        "Failed to reply. Sender dropped."
+                    )
+                })
+            }
+            (_, Msg::Status(reply_tx)) => {
                 let result = self.status().await;
                 reply_tx.send(result).unwrap_or_else(|error| {
                     tracing::error!(
@@ -400,7 +437,7 @@ impl Server {
                     )
                 })
             }
-            Msg::Reload(reply_tx) => {
+            (_, Msg::Reload(reply_tx)) => {
                 let result = self.reload().await;
                 reply_tx.send(result).unwrap_or_else(|error| {
                     tracing::error!(
