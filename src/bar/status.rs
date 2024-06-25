@@ -1,6 +1,6 @@
 // Status of the status bar :)
 
-use std::{path::PathBuf, time::Duration};
+use std::{collections::HashSet, path::PathBuf, time::Duration};
 
 use crate::ps;
 
@@ -16,8 +16,7 @@ pub struct Feed {
     pub pid: u32,
     pub state: Option<ps::State>,
     pub pgroup: usize,
-    pub pchildren: usize,
-    pub pdescendants: usize,
+    pub pdescendants: HashSet<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -58,7 +57,6 @@ impl Status {
                     "PID",
                     "PROC_STATE",
                     "PROC_GROUP_SIZE",
-                    "PROC_CHILDREN",
                     "PROC_DESCENDANTS",
                 ]);
                 for Feed {
@@ -72,10 +70,18 @@ impl Status {
                     pid,
                     state,
                     pgroup,
-                    pchildren,
                     pdescendants,
                 } in feeds.iter()
                 {
+                    let pdescendants = if pdescendants.is_empty() {
+                        "-".to_string()
+                    } else {
+                        pdescendants
+                            .iter()
+                            .map(|pid| pid.to_string())
+                            .collect::<Vec<String>>()
+                            .join(",")
+                    };
                     let log_size = match audience {
                         Audience::Human => {
                             bytesize::ByteSize(*log_size_bytes).to_string()
@@ -95,8 +101,7 @@ impl Status {
                             .map(|s| s.to_str().to_string())
                             .unwrap_or("-".to_string()),
                         &pgroup.to_string(),
-                        &pchildren.to_string(),
-                        &pdescendants.to_string(),
+                        &pdescendants,
                     ]);
                 }
                 format!("{}", table)

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     mem,
     path::{Path, PathBuf},
     result,
@@ -255,8 +256,7 @@ impl Server {
             (procs, _) => {
                 let ps_list = ps::list().await?;
                 let mut pgroups = ps::groups(ps_list.as_slice());
-                let mut children = ps::children(ps_list.as_slice());
-                let mut descendants = ps::descendants(&children);
+                let mut pdescendants = ps::descendants(ps_list.as_slice());
                 let mut states = ps::states(ps_list.as_slice());
                 let mut stati = Vec::new();
                 for (pos, cfg) in self.conf.feeds.iter().enumerate() {
@@ -321,14 +321,9 @@ impl Server {
                         .remove(&proc.get_pgid())
                         .unwrap_or_default()
                         .len();
-                    let pchildren: usize = children
+                    let pdescendants: HashSet<u32> = pdescendants
                         .remove(&proc.get_pid())
-                        .unwrap_or_default()
-                        .len();
-                    let pdescendants: usize = descendants
-                        .remove(&proc.get_pid())
-                        .unwrap_or_default()
-                        .len();
+                        .unwrap_or_default();
                     let state: Option<ps::State> =
                         states.remove(&proc.get_pid());
 
@@ -336,7 +331,6 @@ impl Server {
                         position: pos + 1,
                         name: cfg.name.to_string(),
                         dir: proc.get_dir_path().to_owned(),
-                        // is_running: true, // TODO Check PID in ps output.
                         age_of_output,
                         age_of_log,
                         log_size_bytes,
@@ -344,7 +338,6 @@ impl Server {
                         pid: proc.get_pid(),
                         state,
                         pgroup,
-                        pchildren,
                         pdescendants,
                     };
                     stati.push(feed_status);

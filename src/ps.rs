@@ -127,7 +127,7 @@ pub fn groups(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     pgroup2pids
 }
 
-pub fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
+fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     let mut parent2children: HashMap<u32, HashSet<u32>> = HashMap::new();
     for proc in procs {
         let parent = proc.ppid;
@@ -142,14 +142,13 @@ pub fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     parent2children
 }
 
-pub fn descendants(
-    parent2children: &HashMap<u32, HashSet<u32>>,
-) -> HashMap<u32, HashSet<u32>> {
+pub fn descendants(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
+    let parent2children = children(procs);
     let mut parent2descendants = HashMap::new();
     for parent in parent2children.keys() {
         let mut parent_descendants = HashSet::new();
         collect_descendants(
-            parent2children,
+            &parent2children,
             *parent,
             &mut parent_descendants,
         );
@@ -300,8 +299,7 @@ mod tests {
             (4, HashSet::from([5])),
         ]);
         let list = ps_parse(out).unwrap();
-        let children = children(&list[..]);
-        let descendants_actual = descendants(&children);
+        let descendants_actual = descendants(&list[..]);
         assert_eq!(descendants_expected, descendants_actual);
     }
 
