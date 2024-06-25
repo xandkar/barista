@@ -7,6 +7,64 @@ pub struct Info {
     pub pid: u32,
     pub ppid: u32,
     pub pgrp: u32,
+    pub state: State,
+}
+
+// > D    uninterruptible sleep (usually IO)
+// > I    Idle kernel thread
+// > R    running or runnable (on run queue)
+// > S    interruptible sleep (waiting for an event to complete)
+// > T    stopped by job control signal
+// > t    stopped by debugger during the tracing
+// > W    paging (not valid since the 2.6.xx kernel)
+// > X    dead (should never be seen)
+// > Z    defunct ("zombie") process, terminated but not reaped by
+// >      its parent
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize,
+)]
+pub enum State {
+    SleepUninterruptible,
+    SleepInterruptible,
+    Idle,
+    RunQueue,
+    StoppedByJobControl,
+    StoppedByDebugger,
+    Paging,
+    Dead,
+    Zombie,
+}
+
+impl State {
+    fn parse(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "D" => Ok(Self::SleepUninterruptible),
+            "I" => Ok(Self::Idle),
+            "R" => Ok(Self::RunQueue),
+            "S" => Ok(Self::SleepInterruptible),
+            "T" => Ok(Self::StoppedByJobControl),
+            "t" => Ok(Self::StoppedByDebugger),
+            "W" => Ok(Self::Paging),
+            "X" => Ok(Self::Dead),
+            "Z" => Ok(Self::Zombie),
+            _ => Err(anyhow!("Invalid process state value: {:?}", s)),
+        }
+    }
+
+    pub fn to_str(&self) -> &str {
+        match self {
+            Self::SleepUninterruptible => "D",
+            Self::Idle => "I",
+            Self::RunQueue => "R",
+            Self::SleepInterruptible => "S",
+            Self::StoppedByJobControl => "T",
+            Self::StoppedByDebugger => "t",
+            Self::Paging => "W",
+            Self::Dead => "X",
+            Self::Zombie => "Z",
+        }
+    }
 }
 
 pub async fn list() -> anyhow::Result<Vec<Info>> {
@@ -15,20 +73,30 @@ pub async fn list() -> anyhow::Result<Vec<Info>> {
 }
 
 async fn ps_exec() -> anyhow::Result<String> {
-    exec("ps", &["-eo", "pid,ppid,pgrp"]).await
+    exec("ps", &["-eo", "pid,ppid,pgrp,state"]).await
 }
 
 fn ps_parse(out: &str) -> anyhow::Result<Vec<Info>> {
     let mut list = Vec::new();
     // Skip headers.
     for line in out.lines().skip(1) {
-        match line
-            .split_whitespace()
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let pids: Vec<u32> = fields[0..3]
+            .iter()
             .filter_map(|num| num.parse().ok())
-            .collect::<Vec<u32>>()[..]
-        {
-            [pid, ppid, pgrp] => {
-                let info = Info { pid, ppid, pgrp };
+            .collect();
+        let state: Vec<State> = fields[3..4]
+            .iter()
+            .filter_map(|s| State::parse(s).ok())
+            .collect();
+        match (&pids[..], &state[..]) {
+            ([pid, ppid, pgrp], [state]) => {
+                let info = Info {
+                    pid: *pid,
+                    ppid: *ppid,
+                    pgrp: *pgrp,
+                    state: *state,
+                };
                 list.push(info);
             }
             _ => {
@@ -37,6 +105,13 @@ fn ps_parse(out: &str) -> anyhow::Result<Vec<Info>> {
         }
     }
     Ok(list)
+}
+
+pub fn states(procs: &[Info]) -> HashMap<u32, State> {
+    procs
+        .iter()
+        .map(|Info { pid, state, .. }| (*pid, *state))
+        .collect()
 }
 
 pub fn groups(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
@@ -127,12 +202,12 @@ mod tests {
     use super::*;
 
     const OUT_0: &str = "PID PPID PGRP";
-    const OUT_1: &str = "  PID  PPID  PGRP
-    1     0     1
-    2     1     2
-    3     1     3
-    4     1     4
-    5     4     4
+    const OUT_1: &str = "  PID  PPID  PGRP STATE
+    1     0     1     Z
+    2     1     2     Z
+    3     1     3     Z
+    4     1     4     Z
+    5     4     4     Z
 ";
 
     #[test]
@@ -158,26 +233,31 @@ mod tests {
                 pid: 1,
                 ppid: 0,
                 pgrp: 1,
+                state: State::Zombie,
             },
             Info {
                 pid: 2,
                 ppid: 1,
                 pgrp: 2,
+                state: State::Zombie,
             },
             Info {
                 pid: 3,
                 ppid: 1,
                 pgrp: 3,
+                state: State::Zombie,
             },
             Info {
                 pid: 4,
                 ppid: 1,
                 pgrp: 4,
+                state: State::Zombie,
             },
             Info {
                 pid: 5,
                 ppid: 4,
                 pgrp: 4,
+                state: State::Zombie,
             },
         ];
         let list_actual = ps_parse(out).unwrap();
@@ -223,5 +303,20 @@ mod tests {
         let children = children(&list[..]);
         let descendants_actual = descendants(&children);
         assert_eq!(descendants_expected, descendants_actual);
+    }
+
+    #[test]
+    fn test_1_5_states() {
+        let out = OUT_1;
+        let states_expected = HashMap::from([
+            (1, State::Zombie),
+            (2, State::Zombie),
+            (3, State::Zombie),
+            (4, State::Zombie),
+            (5, State::Zombie),
+        ]);
+        let list = ps_parse(out).unwrap();
+        let states_actual = states(&list[..]);
+        assert_eq!(states_expected, states_actual);
     }
 }

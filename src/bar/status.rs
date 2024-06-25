@@ -2,17 +2,19 @@
 
 use std::{path::PathBuf, time::Duration};
 
+use crate::ps;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Feed {
     pub position: usize,
     pub name: String,
     pub dir: PathBuf,
-    // pub is_running: bool,
     pub age_of_output: Option<Duration>,
     pub age_of_log: Option<Duration>,
     pub log_size_bytes: u64,
     pub log_lines: usize,
     pub pid: u32,
+    pub state: Option<ps::State>,
     pub pgroup: usize,
     pub pchildren: usize,
     pub pdescendants: usize,
@@ -49,12 +51,12 @@ impl Status {
                     "POSITION",
                     "NAME",
                     "DIR",
-                    // "RUNNING?",
                     "LAST_OUTPUTTED",
                     "LAST_LOGGED",
                     "LOG_SIZE",
                     "LOG_LINES",
                     "PID",
+                    "PROC_STATE",
                     "PROC_GROUP_SIZE",
                     "PROC_CHILDREN",
                     "PROC_DESCENDANTS",
@@ -63,12 +65,12 @@ impl Status {
                     position,
                     name,
                     dir,
-                    // is_running,
                     age_of_output,
                     age_of_log,
                     log_size_bytes,
                     log_lines,
                     pid,
+                    state,
                     pgroup,
                     pchildren,
                     pdescendants,
@@ -84,12 +86,14 @@ impl Status {
                         &position.to_string(),
                         name,
                         dir.to_string_lossy().as_ref(),
-                        // is_running.then_some("YES").unwrap_or("NO"),
                         &duration_fmt(*age_of_output, audience),
                         &duration_fmt(*age_of_log, audience),
                         &log_size,
                         &log_lines.to_string(),
                         &pid.to_string(),
+                        &state
+                            .map(|s| s.to_str().to_string())
+                            .unwrap_or("-".to_string()),
                         &pgroup.to_string(),
                         &pchildren.to_string(),
                         &pdescendants.to_string(),

@@ -257,6 +257,7 @@ impl Server {
                 let mut pgroups = ps::groups(ps_list.as_slice());
                 let mut children = ps::children(ps_list.as_slice());
                 let mut descendants = ps::descendants(&children);
+                let mut states = ps::states(ps_list.as_slice());
                 let mut stati = Vec::new();
                 for (pos, cfg) in self.conf.feeds.iter().enumerate() {
                     let proc = &procs[pos];
@@ -328,6 +329,8 @@ impl Server {
                         .remove(&proc.get_pid())
                         .unwrap_or_default()
                         .len();
+                    let state: Option<ps::State> =
+                        states.remove(&proc.get_pid());
 
                     let feed_status = bar::status::Feed {
                         position: pos + 1,
@@ -339,6 +342,7 @@ impl Server {
                         log_size_bytes,
                         log_lines,
                         pid: proc.get_pid(),
+                        state,
                         pgroup,
                         pchildren,
                         pdescendants,
