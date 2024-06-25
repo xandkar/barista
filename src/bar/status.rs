@@ -15,6 +15,7 @@ pub struct Feed {
     pub pid: u32,
     pub pgroup: usize,
     pub pchildren: usize,
+    pub pdescendants: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +57,7 @@ impl Status {
                     "PID",
                     "PROC_GROUP_SIZE",
                     "PROC_CHILDREN",
+                    "PROC_DESCENDANTS",
                 ]);
                 for Feed {
                     position,
@@ -69,6 +71,7 @@ impl Status {
                     pid,
                     pgroup,
                     pchildren,
+                    pdescendants,
                 } in feeds.iter()
                 {
                     let log_size = match audience {
@@ -89,6 +92,7 @@ impl Status {
                         &pid.to_string(),
                         &pgroup.to_string(),
                         &pchildren.to_string(),
+                        &pdescendants.to_string(),
                     ]);
                 }
                 format!("{}", table)

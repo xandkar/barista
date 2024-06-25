@@ -256,6 +256,7 @@ impl Server {
                 let ps_list = ps::list().await?;
                 let mut pgroups = ps::groups(ps_list.as_slice());
                 let mut children = ps::children(ps_list.as_slice());
+                let mut descendants = ps::descendants(&children);
                 let mut stati = Vec::new();
                 for (pos, cfg) in self.conf.feeds.iter().enumerate() {
                     let proc = &procs[pos];
@@ -313,13 +314,17 @@ impl Server {
                         }
                     };
 
-                    // Removing to reuse existing group set allocation,
-                    // since we'll never look it up more than once anyway.
+                    // Removing to reuse existing set allocation, since we'll
+                    // never look it up more than once anyway.
                     let pgroup = pgroups
                         .remove(&proc.get_pgid())
                         .unwrap_or_default()
                         .len();
                     let pchildren: usize = children
+                        .remove(&proc.get_pid())
+                        .unwrap_or_default()
+                        .len();
+                    let pdescendants: usize = descendants
                         .remove(&proc.get_pid())
                         .unwrap_or_default()
                         .len();
@@ -336,6 +341,7 @@ impl Server {
                         pid: proc.get_pid(),
                         pgroup,
                         pchildren,
+                        pdescendants,
                     };
                     stati.push(feed_status);
                 }

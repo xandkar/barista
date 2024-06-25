@@ -67,6 +67,35 @@ pub fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     parent2children
 }
 
+pub fn descendants(
+    parent2children: &HashMap<u32, HashSet<u32>>,
+) -> HashMap<u32, HashSet<u32>> {
+    let mut parent2descendants = HashMap::new();
+    for parent in parent2children.keys() {
+        let mut parent_descendants = HashSet::new();
+        collect_descendants(
+            parent2children,
+            *parent,
+            &mut parent_descendants,
+        );
+        parent2descendants.insert(*parent, parent_descendants);
+    }
+    parent2descendants
+}
+
+pub fn collect_descendants(
+    parent2children: &HashMap<u32, HashSet<u32>>,
+    parent: u32,
+    parent_descendants: &mut HashSet<u32>,
+) {
+    if let Some(children) = parent2children.get(&parent) {
+        for child in children {
+            parent_descendants.insert(*child);
+            collect_descendants(parent2children, *child, parent_descendants);
+        }
+    }
+}
+
 async fn exec(cmd: &str, args: &[&str]) -> anyhow::Result<String> {
     use std::process::Output;
 
@@ -180,5 +209,19 @@ mod tests {
         let list = ps_parse(out).unwrap();
         let children_actual = children(&list[..]);
         assert_eq!(children_expected, children_actual);
+    }
+
+    #[test]
+    fn test_1_4_descendants() {
+        let out = OUT_1;
+        let descendants_expected = HashMap::from([
+            (0, HashSet::from([1, 2, 3, 4, 5])),
+            (1, HashSet::from([2, 3, 4, 5])),
+            (4, HashSet::from([5])),
+        ]);
+        let list = ps_parse(out).unwrap();
+        let children = children(&list[..]);
+        let descendants_actual = descendants(&children);
+        assert_eq!(descendants_expected, descendants_actual);
     }
 }
