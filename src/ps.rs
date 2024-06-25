@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Context};
 
 #[derive(Debug, PartialEq)]
-pub struct Info {
+pub struct Proc {
     pub pid: u32,
     pub ppid: u32,
     pub pgrp: u32,
@@ -67,7 +67,7 @@ impl State {
     }
 }
 
-pub async fn list() -> anyhow::Result<Vec<Info>> {
+pub async fn list() -> anyhow::Result<Vec<Proc>> {
     let out = ps_exec().await?;
     ps_parse(&out)
 }
@@ -76,7 +76,7 @@ async fn ps_exec() -> anyhow::Result<String> {
     exec("ps", &["-eo", "pid,ppid,pgrp,state"]).await
 }
 
-fn ps_parse(out: &str) -> anyhow::Result<Vec<Info>> {
+fn ps_parse(out: &str) -> anyhow::Result<Vec<Proc>> {
     let mut list = Vec::new();
     // Skip headers.
     for line in out.lines().skip(1) {
@@ -91,7 +91,7 @@ fn ps_parse(out: &str) -> anyhow::Result<Vec<Info>> {
             .collect();
         match (&pids[..], &state[..]) {
             ([pid, ppid, pgrp], [state]) => {
-                let info = Info {
+                let info = Proc {
                     pid: *pid,
                     ppid: *ppid,
                     pgrp: *pgrp,
@@ -107,14 +107,14 @@ fn ps_parse(out: &str) -> anyhow::Result<Vec<Info>> {
     Ok(list)
 }
 
-pub fn states(procs: &[Info]) -> HashMap<u32, State> {
+pub fn states(procs: &[Proc]) -> HashMap<u32, State> {
     procs
         .iter()
-        .map(|Info { pid, state, .. }| (*pid, *state))
+        .map(|Proc { pid, state, .. }| (*pid, *state))
         .collect()
 }
 
-pub fn groups(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
+pub fn groups(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
     let mut pgroup2pids: HashMap<u32, HashSet<u32>> = HashMap::new();
     for proc in procs {
         pgroup2pids
@@ -127,7 +127,7 @@ pub fn groups(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     pgroup2pids
 }
 
-fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
+fn children(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
     let mut parent2children: HashMap<u32, HashSet<u32>> = HashMap::new();
     for proc in procs {
         let parent = proc.ppid;
@@ -142,7 +142,7 @@ fn children(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
     parent2children
 }
 
-pub fn descendants(procs: &[Info]) -> HashMap<u32, HashSet<u32>> {
+pub fn descendants(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
     let parent2children = children(procs);
     let mut parent2descendants = HashMap::new();
     for parent in parent2children.keys() {
@@ -228,31 +228,31 @@ mod tests {
     fn test_1_1_parse() {
         let out = OUT_1;
         let list_expected = vec![
-            Info {
+            Proc {
                 pid: 1,
                 ppid: 0,
                 pgrp: 1,
                 state: State::Zombie,
             },
-            Info {
+            Proc {
                 pid: 2,
                 ppid: 1,
                 pgrp: 2,
                 state: State::Zombie,
             },
-            Info {
+            Proc {
                 pid: 3,
                 ppid: 1,
                 pgrp: 3,
                 state: State::Zombie,
             },
-            Info {
+            Proc {
                 pid: 4,
                 ppid: 1,
                 pgrp: 4,
                 state: State::Zombie,
             },
-            Info {
+            Proc {
                 pid: 5,
                 ppid: 4,
                 pgrp: 4,
