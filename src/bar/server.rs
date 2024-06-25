@@ -333,6 +333,7 @@ impl Server {
                         age_of_log,
                         log_size_bytes,
                         log_lines,
+                        pid: proc.get_pid(),
                         pgroup,
                         pchildren,
                     };

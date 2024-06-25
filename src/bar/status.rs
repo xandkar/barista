@@ -12,6 +12,7 @@ pub struct Feed {
     pub age_of_log: Option<Duration>,
     pub log_size_bytes: u64,
     pub log_lines: usize,
+    pub pid: u32,
     pub pgroup: usize,
     pub pchildren: usize,
 }
@@ -52,6 +53,7 @@ impl Status {
                     "LAST_LOGGED",
                     "LOG_SIZE",
                     "LOG_LINES",
+                    "PID",
                     "PROC_GROUP_SIZE",
                     "PROC_CHILDREN",
                 ]);
@@ -64,6 +66,7 @@ impl Status {
                     age_of_log,
                     log_size_bytes,
                     log_lines,
+                    pid,
                     pgroup,
                     pchildren,
                 } in feeds.iter()
@@ -83,6 +86,7 @@ impl Status {
                         &duration_fmt(*age_of_log, audience),
                         &log_size,
                         &log_lines.to_string(),
+                        &pid.to_string(),
                         &pgroup.to_string(),
                         &pchildren.to_string(),
                     ]);
