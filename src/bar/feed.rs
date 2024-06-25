@@ -17,6 +17,7 @@ use crate::{bar, conf};
 
 #[derive(Debug)]
 pub struct Feed {
+    pos: usize,
     name: String,
     dir: PathBuf,
     log_file: PathBuf,
@@ -114,11 +115,16 @@ impl Feed {
             unreachable!("stdout not requested at process spawn.")
         });
         let out = tokio::spawn(
-            route_out(stdout, pos, dst)
-                .instrument(info_span!("feed", name = cfg.name))
+            read_stdout(stdout, pos, dst)
+                .instrument(info_span!(
+                    "feed",
+                    pos = pos + 1,
+                    name = cfg.name
+                ))
                 .in_current_span(),
         );
         let selph = Self {
+            pos,
             name: cfg.name.to_string(),
             dir,
             log_file: log_file_path,
@@ -132,7 +138,14 @@ impl Feed {
         Ok(selph)
     }
 
-    #[tracing::instrument(name = "feed_stop", skip_all, fields(name = self.name))]
+    #[tracing::instrument(
+        name = "feed_stop",
+        skip_all,
+        fields(
+            pos = self.pos + 1,
+            name = self.name
+        )
+    )]
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Stopping");
 
@@ -160,8 +173,8 @@ impl Feed {
     }
 }
 
-#[tracing::instrument(name = "out", skip_all)]
-async fn route_out(
+#[tracing::instrument(skip_all)]
+async fn read_stdout(
     stdout: process::ChildStdout,
     pos: usize,
     dst_tx: bar::server::ApiSender,
