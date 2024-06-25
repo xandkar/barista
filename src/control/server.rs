@@ -7,7 +7,7 @@ use tarpc::{
     tokio_serde::formats::Bincode,
     tokio_util::codec::LengthDelimitedCodec,
 };
-use tokio::{fs, net::UnixSocket};
+use tokio::net::UnixSocket;
 use tracing::Instrument;
 
 use crate::{
@@ -60,13 +60,6 @@ pub async fn run(
     bar_tx: bar::server::ApiSender,
 ) -> anyhow::Result<()> {
     let sock_file = conf::sock_file(&dir);
-    if let Err(error) = fs::remove_file(&sock_file).await {
-        tracing::warn!(
-            ?sock_file,
-            ?error,
-            "Failed to remove existing sock file."
-        );
-    }
     let bar_ctl_srv = BarCtlServer { bar_tx };
     let socket = UnixSocket::new_stream()?;
     socket.bind(&sock_file)?;

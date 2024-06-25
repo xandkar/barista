@@ -7,7 +7,7 @@ pub const FEEDS_DIR_NAME: &str = "feeds";
 pub const FEED_LOG_FILE_NAME: &str = "log";
 pub const FEED_PID_FILE_NAME: &str = "pid";
 pub const SERVER_PID_FILE_NAME: &str = "pid";
-pub const SOCK_FILE_NAME: &str = "socket";
+pub const SERVER_SOCK_FILE_NAME: &str = "socket";
 pub const CONF_FILE_NAME: &str = "conf.toml";
 pub const DEFAULT_DST: Dst = Dst::X11RootWindowName;
 
@@ -99,8 +99,12 @@ impl Conf {
     }
 }
 
+pub fn pid_file(dir: &Path) -> PathBuf {
+    dir.join(SERVER_PID_FILE_NAME)
+}
+
 pub fn sock_file(dir: &Path) -> PathBuf {
-    dir.join(SOCK_FILE_NAME)
+    dir.join(SERVER_SOCK_FILE_NAME)
 }
 
 pub fn conf_file(dir: &Path) -> PathBuf {

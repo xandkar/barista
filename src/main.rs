@@ -1,6 +1,6 @@
 use std::{path::Path, time::Duration};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use barista::conf;
 use clap::Parser;
 
@@ -91,6 +91,23 @@ impl Cli {
 #[tracing::instrument(skip_all)]
 async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
     tracing::info!(?dir, backlog, on, "Starting");
+    let pid_file = conf::pid_file(&dir);
+    let sock_file = conf::sock_file(&dir);
+    if fs::try_exists(&pid_file).await? {
+        bail!(
+            "PID file exists. Another server instance possibly running. \
+            If you're sure it is not - manually remove this file: {:?}",
+            &pid_file
+        );
+    }
+    if fs::try_exists(&sock_file).await? {
+        bail!(
+            "Socket file exists. Another server instance possibly running. \
+            If you're sure it is not - manually remove this file: {:?}",
+            &sock_file
+        );
+    }
+    fs::write(&pid_file, std::process::id().to_string()).await?;
     let mut siblings = JoinSet::new();
     let bar_tx = barista::bar::server::start(&mut siblings, dir).await?;
     siblings.spawn(
@@ -107,8 +124,6 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
     let mut sigterm = tokio::signal::unix::signal(
         tokio::signal::unix::SignalKind::terminate(),
     )?;
-    let pid_file = dir.join(conf::SERVER_PID_FILE_NAME);
-    fs::write(&pid_file, std::process::id().to_string()).await?;
     let result = tokio::select! {
         num_errors = join(&mut siblings) => {
             tracing::error!(num_errors, "Server workers exited.");
@@ -139,8 +154,12 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
             );
         }
     }
+    fs::remove_file(&sock_file).await.context(format!(
+        "Failed to remove server socket file: {:?}",
+        &sock_file
+    ))?;
     fs::remove_file(&pid_file).await.context(format!(
-        "Failed to remove main PID file: {:?}",
+        "Failed to remove server PID file: {:?}",
         &pid_file
     ))?;
     result
