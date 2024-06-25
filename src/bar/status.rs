@@ -16,7 +16,7 @@ pub struct Feed {
     pub pid: u32,
     pub state: Option<ps::State>,
     pub pgroup: usize,
-    pub pdescendants: HashSet<u32>,
+    pub pdescendants: HashSet<ps::Proc>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -76,9 +76,14 @@ impl Status {
                     let pdescendants = if pdescendants.is_empty() {
                         "-".to_string()
                     } else {
+                        let mut pdescendants: Vec<&ps::Proc> =
+                            pdescendants.iter().collect();
+                        pdescendants.sort_by_key(|p| p.pid);
                         pdescendants
                             .iter()
-                            .map(|pid| pid.to_string())
+                            .map(|p| {
+                                format!("{}:{}", p.pid, p.state.to_str())
+                            })
                             .collect::<Vec<String>>()
                             .join(",")
                     };

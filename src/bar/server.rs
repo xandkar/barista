@@ -330,7 +330,7 @@ impl Server {
                         .remove(&proc.get_pgid())
                         .unwrap_or_default()
                         .len();
-                    let pdescendants: HashSet<u32> = pdescendants
+                    let pdescendants: HashSet<ps::Proc> = pdescendants
                         .remove(&proc.get_pid())
                         .unwrap_or_default();
                     let state: Option<ps::State> =

@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context};
 
-#[derive(Debug, PartialEq)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Proc {
     pub pid: u32,
     pub ppid: u32,
@@ -22,7 +24,14 @@ pub struct Proc {
 // >      its parent
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 pub enum State {
     SleepUninterruptible,
@@ -127,22 +136,20 @@ pub fn groups(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
     pgroup2pids
 }
 
-fn children(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
-    let mut parent2children: HashMap<u32, HashSet<u32>> = HashMap::new();
-    for proc in procs {
-        let parent = proc.ppid;
-        let child = proc.pid;
+fn children(procs: &[Proc]) -> HashMap<u32, HashSet<Proc>> {
+    let mut parent2children: HashMap<u32, HashSet<Proc>> = HashMap::new();
+    for child in procs {
         parent2children
-            .entry(parent)
+            .entry(child.ppid)
             .and_modify(|children| {
-                children.insert(child);
+                children.insert(child.clone());
             })
-            .or_insert(HashSet::from([child]));
+            .or_insert(HashSet::from([child.clone()]));
     }
     parent2children
 }
 
-pub fn descendants(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
+pub fn descendants(procs: &[Proc]) -> HashMap<u32, HashSet<Proc>> {
     let parent2children = children(procs);
     let mut parent2descendants = HashMap::new();
     for parent in parent2children.keys() {
@@ -158,14 +165,18 @@ pub fn descendants(procs: &[Proc]) -> HashMap<u32, HashSet<u32>> {
 }
 
 pub fn collect_descendants(
-    parent2children: &HashMap<u32, HashSet<u32>>,
+    parent2children: &HashMap<u32, HashSet<Proc>>,
     parent: u32,
-    parent_descendants: &mut HashSet<u32>,
+    parent_descendants: &mut HashSet<Proc>,
 ) {
     if let Some(children) = parent2children.get(&parent) {
         for child in children {
-            parent_descendants.insert(*child);
-            collect_descendants(parent2children, *child, parent_descendants);
+            parent_descendants.insert(child.clone());
+            collect_descendants(
+                parent2children,
+                child.pid,
+                parent_descendants,
+            );
         }
     }
 }
@@ -209,6 +220,37 @@ mod tests {
     5     4     4     Z
 ";
 
+    const PROC_1_1: Proc = Proc {
+        pid: 1,
+        ppid: 0,
+        pgrp: 1,
+        state: State::Zombie,
+    };
+    const PROC_1_2: Proc = Proc {
+        pid: 2,
+        ppid: 1,
+        pgrp: 2,
+        state: State::Zombie,
+    };
+    const PROC_1_3: Proc = Proc {
+        pid: 3,
+        ppid: 1,
+        pgrp: 3,
+        state: State::Zombie,
+    };
+    const PROC_1_4: Proc = Proc {
+        pid: 4,
+        ppid: 1,
+        pgrp: 4,
+        state: State::Zombie,
+    };
+    const PROC_1_5: Proc = Proc {
+        pid: 5,
+        ppid: 4,
+        pgrp: 4,
+        state: State::Zombie,
+    };
+
     #[test]
     fn test_0_1_parse() {
         assert!(ps_parse(OUT_0).unwrap().is_empty());
@@ -227,38 +269,8 @@ mod tests {
     #[test]
     fn test_1_1_parse() {
         let out = OUT_1;
-        let list_expected = vec![
-            Proc {
-                pid: 1,
-                ppid: 0,
-                pgrp: 1,
-                state: State::Zombie,
-            },
-            Proc {
-                pid: 2,
-                ppid: 1,
-                pgrp: 2,
-                state: State::Zombie,
-            },
-            Proc {
-                pid: 3,
-                ppid: 1,
-                pgrp: 3,
-                state: State::Zombie,
-            },
-            Proc {
-                pid: 4,
-                ppid: 1,
-                pgrp: 4,
-                state: State::Zombie,
-            },
-            Proc {
-                pid: 5,
-                ppid: 4,
-                pgrp: 4,
-                state: State::Zombie,
-            },
-        ];
+        let list_expected =
+            vec![PROC_1_1, PROC_1_2, PROC_1_3, PROC_1_4, PROC_1_5];
         let list_actual = ps_parse(out).unwrap();
         assert_eq!(list_expected, list_actual);
     }
@@ -281,9 +293,9 @@ mod tests {
     fn test_1_3_children() {
         let out = OUT_1;
         let children_expected = HashMap::from([
-            (0, HashSet::from([1])),
-            (1, HashSet::from([2, 3, 4])),
-            (4, HashSet::from([5])),
+            (0, HashSet::from([PROC_1_1])),
+            (1, HashSet::from([PROC_1_2, PROC_1_3, PROC_1_4])),
+            (4, HashSet::from([PROC_1_5])),
         ]);
         let list = ps_parse(out).unwrap();
         let children_actual = children(&list[..]);
@@ -294,9 +306,14 @@ mod tests {
     fn test_1_4_descendants() {
         let out = OUT_1;
         let descendants_expected = HashMap::from([
-            (0, HashSet::from([1, 2, 3, 4, 5])),
-            (1, HashSet::from([2, 3, 4, 5])),
-            (4, HashSet::from([5])),
+            (
+                0,
+                HashSet::from([
+                    PROC_1_1, PROC_1_2, PROC_1_3, PROC_1_4, PROC_1_5,
+                ]),
+            ),
+            (1, HashSet::from([PROC_1_2, PROC_1_3, PROC_1_4, PROC_1_5])),
+            (4, HashSet::from([PROC_1_5])),
         ]);
         let list = ps_parse(out).unwrap();
         let descendants_actual = descendants(&list[..]);
