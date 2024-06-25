@@ -264,7 +264,6 @@ impl Server {
             ([], []) => bar::status::Status::UpOff,
             (procs, _) => {
                 let ps_list = ps::list().await?;
-                let mut pgroups = ps::groups(ps_list.as_slice());
                 let mut pdescendants = ps::descendants(ps_list.as_slice());
                 let mut states = ps::states(ps_list.as_slice());
                 let mut stati = Vec::new();
@@ -326,10 +325,6 @@ impl Server {
 
                     // Removing to reuse existing set allocation, since we'll
                     // never look it up more than once anyway.
-                    let pgroup = pgroups
-                        .remove(&proc.get_pgid())
-                        .unwrap_or_default()
-                        .len();
                     let pdescendants: HashSet<ps::Proc> = pdescendants
                         .remove(&proc.get_pid())
                         .unwrap_or_default();
@@ -346,7 +341,6 @@ impl Server {
                         log_lines,
                         pid: proc.get_pid(),
                         state,
-                        pgroup,
                         pdescendants,
                     };
                     stati.push(feed_status);

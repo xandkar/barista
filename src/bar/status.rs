@@ -15,7 +15,6 @@ pub struct Feed {
     pub log_lines: usize,
     pub pid: u32,
     pub state: Option<ps::State>,
-    pub pgroup: usize,
     pub pdescendants: HashSet<ps::Proc>,
 }
 
@@ -56,7 +55,6 @@ impl Status {
                     "LOG_LINES",
                     "PID",
                     "PROC_STATE",
-                    "PROC_GROUP_SIZE",
                     "PROC_DESCENDANTS",
                 ]);
                 for Feed {
@@ -69,7 +67,6 @@ impl Status {
                     log_lines,
                     pid,
                     state,
-                    pgroup,
                     pdescendants,
                 } in feeds.iter()
                 {
@@ -105,7 +102,6 @@ impl Status {
                         &state
                             .map(|s| s.to_str().to_string())
                             .unwrap_or("-".to_string()),
-                        &pgroup.to_string(),
                         &pdescendants,
                     ]);
                 }
