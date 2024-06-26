@@ -47,6 +47,19 @@ enum Cmd {
     /// Ask the server to turn-off the bar feeds.
     Off,
 
+    // TODO Restart subcommand.
+    // /// Restart a specified feed (for example to force an early update on a
+    // /// feed with long polling intervals).
+    // Restart {
+    //     /// Feed position.
+    //     #[clap(short, long, group = "feed", default_value = "0")]
+    //     pos: usize,
+    //
+    //     /// Feed name.
+    //     #[clap(short, long, group = "feed")]
+    //     name: Option<String>,
+    // },
+    //
     /// Ask the server for its current status.
     Status {
         /// Machine-friendly output - i.e. no spaces in table cells.
