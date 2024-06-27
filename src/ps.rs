@@ -152,33 +152,20 @@ fn children(procs: &[Proc]) -> HashMap<u32, HashSet<Proc>> {
 pub fn descendants(procs: &[Proc]) -> HashMap<u32, HashSet<Proc>> {
     let parent2children = children(procs);
     let mut parent2descendants = HashMap::new();
-    for parent in parent2children.keys() {
-        let mut parent_descendants = HashSet::new();
-        collect_descendants(
-            &parent2children,
-            *parent,
-            &mut parent_descendants,
-        );
-        parent2descendants.insert(*parent, parent_descendants);
+    for ancestor in parent2children.keys() {
+        let mut descendants = HashSet::new();
+        let mut ancestors = vec![*ancestor];
+        while let Some(ancestor) = ancestors.pop() {
+            if let Some(children) = parent2children.get(&ancestor) {
+                for child in children {
+                    descendants.insert(child.clone());
+                    ancestors.push(child.pid);
+                }
+            }
+        }
+        parent2descendants.insert(*ancestor, descendants);
     }
     parent2descendants
-}
-
-pub fn collect_descendants(
-    parent2children: &HashMap<u32, HashSet<Proc>>,
-    parent: u32,
-    parent_descendants: &mut HashSet<Proc>,
-) {
-    if let Some(children) = parent2children.get(&parent) {
-        for child in children {
-            parent_descendants.insert(child.clone());
-            collect_descendants(
-                parent2children,
-                child.pid,
-                parent_descendants,
-            );
-        }
-    }
 }
 
 async fn exec(cmd: &str, args: &[&str]) -> anyhow::Result<String> {
