@@ -62,7 +62,7 @@ impl Status {
                     "PROC_STATE",
                     "PROC_DESCENDANTS",
                 ]);
-                for Feed { position, info } in feeds.iter() {
+                for Feed { position, info } in feeds {
                     match info {
                         Some(Info {
                             name,
