@@ -23,8 +23,7 @@ pub fn init(
     let base_env_filter =
         || EnvFilter::from_default_env().add_directive(level.into());
     let env_filter = extra_filter_directive
-        .map(|d| base_env_filter().add_directive(d))
-        .unwrap_or_else(base_env_filter);
+        .map_or_else(base_env_filter, |d| base_env_filter().add_directive(d));
     let layer_stderr = fmt::Layer::new()
         .with_writer(std::io::stderr)
         .with_ansi(true)
