@@ -83,7 +83,6 @@ impl Feed {
             let log_file_path = log_file_path.clone();
             spawn_blocking(move || {
                 std::fs::OpenOptions::new()
-                    .write(true)
                     .append(true)
                     .create(true)
                     .open(log_file_path)
