@@ -86,7 +86,7 @@ impl Feed {
                     .write(true)
                     .append(true)
                     .create(true)
-                    .open(&log_file_path)
+                    .open(log_file_path)
             })
             .await??
         };

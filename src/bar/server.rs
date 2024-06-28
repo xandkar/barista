@@ -212,7 +212,7 @@ impl Server {
                             "X11 failure should have caused a return above."
                         );
                     });
-                    x11.set_root_window_name(&data)?;
+                    x11.set_root_window_name(data)?;
                     self.x11.replace(x11);
                 }
             }

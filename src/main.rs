@@ -104,8 +104,8 @@ impl Cli {
 #[tracing::instrument(skip_all)]
 async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
     tracing::info!(?dir, backlog, on, "Starting");
-    let pid_file = conf::pid_file(&dir);
-    let sock_file = conf::sock_file(&dir);
+    let pid_file = conf::pid_file(dir);
+    let sock_file = conf::sock_file(dir);
     if fs::try_exists(&pid_file).await? {
         bail!(
             "PID file exists. Another server instance possibly running. \
@@ -219,7 +219,7 @@ async fn client(
     timeout: Duration,
 ) -> anyhow::Result<()> {
     tracing::debug!(?cmd, ?dir, ?timeout, "Starting");
-    let client = barista::control::client::Client::new(&dir, timeout).await?;
+    let client = barista::control::client::Client::new(dir, timeout).await?;
     match cmd {
         Cmd::Server { .. } => {
             unreachable!("Server command passed to the client function.")
