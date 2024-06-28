@@ -113,7 +113,8 @@ impl Feed {
             .context(format!("Failed to write PID file: {:?}", &pid_file))?;
 
         // XXX Assuming Command.process_group(0) was called.
-        let pgid = nix::unistd::Pid::from_raw(pid as i32);
+        // TODO Should Err(_) actually be unreachable!() here?
+        let pgid = to_nix_pid(pid)?;
 
         let stdout = child.stdout.take().unwrap_or_else(|| {
             unreachable!("stdout not requested at process spawn.")
@@ -311,7 +312,7 @@ async fn try_kill(entry: fs::DirEntry) -> anyhow::Result<()> {
     let pid: u32 = pid
         .parse()
         .context(format!("Failed to parse feed PID file: {:?}", &pid_file))?;
-    let pid = nix::unistd::Pid::from_raw(pid as i32);
+    let pid = to_nix_pid(pid)?;
     let pgrp = pid;
     nix::sys::signal::killpg(pgrp, nix::sys::signal::Signal::SIGKILL)
         .context(format!(
@@ -323,4 +324,10 @@ async fn try_kill(entry: fs::DirEntry) -> anyhow::Result<()> {
         &pid_file
     ))?;
     Ok(())
+}
+
+fn to_nix_pid(pid: u32) -> anyhow::Result<nix::unistd::Pid> {
+    // Catch wrap arounds when going from u32 to i32:
+    let pid: i32 = pid.try_into()?;
+    Ok(nix::unistd::Pid::from_raw(pid))
 }
