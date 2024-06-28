@@ -287,10 +287,8 @@ impl Server {
             self.feeds.iter().filter(|x| x.is_some()).count();
         match &self.state {
             State::Offing { notify } if num_feeds_still_running == 0 => {
-                for timer_opt in self.expiration_timers.drain(0..) {
-                    if let Some(timer) = timer_opt {
-                        timer.abort()
-                    }
+                for timer in self.expiration_timers.drain(0..).flatten() {
+                    timer.abort();
                 }
                 if let Some(timer) = self.output_timer.take() {
                     timer.abort()
