@@ -288,9 +288,13 @@ impl Server {
         match &self.state {
             State::Offing { notify } if num_feeds_still_running == 0 => {
                 for timer_opt in self.expiration_timers.drain(0..) {
-                    timer_opt.map(|timer| timer.abort());
+                    if let Some(timer) = timer_opt {
+                        timer.abort()
+                    }
                 }
-                self.output_timer.take().map(|timer| timer.abort());
+                if let Some(timer) = self.output_timer.take() {
+                    timer.abort()
+                }
                 self.x11.take();
                 notify.notify_waiters();
                 self.output_blank().await;
@@ -547,9 +551,9 @@ impl Server {
         if let Some(ttl) = self.conf.feeds[pos].ttl {
             let ttl = Duration::from_secs_f64(ttl);
             let new = self.schedule(Msg::Expiration { pos }, ttl);
-            self.expiration_timers[pos]
-                .replace(new)
-                .map(|old| old.abort());
+            if let Some(old) = self.expiration_timers[pos].replace(new) {
+                old.abort()
+            }
         }
     }
 
