@@ -194,7 +194,7 @@ async fn waiter_and_killer(
     tracing::info!("Starting.");
     let result: io::Result<std::process::ExitStatus> = async {
         tokio::select! {
-            _ = life.cancelled() => {
+            () = life.cancelled() => {
                 nix::sys::signal::killpg(
                     pgid,
                     nix::sys::signal::Signal::SIGKILL
