@@ -1,6 +1,9 @@
 barista
 ===============================================================================
 
+![test status](https://github.com/xandkar/barista/actions/workflows/test.yml/badge.svg)
+[![dependencies status](https://deps.rs/repo/github/xandkar/barista/status.svg)](https://deps.rs/repo/github/xandkar/barista)
+
 [pista](https://github.com/xandkar/pista)'s more featureful successor.
 
 Intended for use with [dwm](https://dwm.suckless.org/), but can just as well be
