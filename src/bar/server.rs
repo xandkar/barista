@@ -353,10 +353,7 @@ impl Server {
                                 .flatten();
                             let log_lines =
                                 match fs::read_to_string(&log_file).await {
-                                    Ok(log) => log
-                                        .lines()
-                                        .map(|line| line.to_string())
-                                        .count(),
+                                    Ok(log) => log.lines().count(),
                                     Err(err) => {
                                         tracing::error!(
                                             ?log_file,
