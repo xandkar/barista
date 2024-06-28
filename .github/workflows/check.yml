@@ -81,7 +81,7 @@ jobs:
     strategy:
       matrix:
         # msrv: [1.56.1] # 2021 edition requires 1.56
-        msrv: [1.65.0] # Trying arbitrary old version that is newer than 1.56.1
+        msrv: [1.74.0]
     name: ubuntu / ${{ matrix.msrv }}
     steps:
       - uses: actions/checkout@v4
