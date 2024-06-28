@@ -112,18 +112,14 @@ async fn reconf(api_tx: &ApiSender) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn input(
-    api_tx: &ApiSender,
-    pos: usize,
-    data: String,
-) -> ApiResult<()> {
+pub fn input(api_tx: &ApiSender, pos: usize, data: String) -> ApiResult<()> {
     api_tx.send(Api {
         msg: Msg::Input { pos, data },
     })?;
     Ok(())
 }
 
-pub async fn exit(
+pub fn exit(
     api_tx: &ApiSender,
     pos: usize,
     result: io::Result<std::process::ExitStatus>,
