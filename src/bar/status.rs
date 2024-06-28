@@ -5,8 +5,7 @@ use std::{collections::HashSet, path::PathBuf, time::Duration};
 use crate::ps;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Feed {
-    pub position: usize,
+pub struct Info {
     pub name: String,
     pub dir: PathBuf,
     pub age_of_output: Option<Duration>,
@@ -16,6 +15,12 @@ pub struct Feed {
     pub pid: u32,
     pub state: Option<ps::State>,
     pub pdescendants: HashSet<ps::Proc>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Feed {
+    pub position: usize,
+    pub info: Option<Info>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,53 +62,76 @@ impl Status {
                     "PROC_STATE",
                     "PROC_DESCENDANTS",
                 ]);
-                for Feed {
-                    position,
-                    name,
-                    dir,
-                    age_of_output,
-                    age_of_log,
-                    log_size_bytes,
-                    log_lines,
-                    pid,
-                    state,
-                    pdescendants,
-                } in feeds.iter()
-                {
-                    let pdescendants = if pdescendants.is_empty() {
-                        "-".to_string()
-                    } else {
-                        let mut pdescendants: Vec<&ps::Proc> =
-                            pdescendants.iter().collect();
-                        pdescendants.sort_by_key(|p| p.pid);
-                        pdescendants
-                            .iter()
-                            .map(|p| {
-                                format!("{}:{}", p.pid, p.state.to_str())
-                            })
-                            .collect::<Vec<String>>()
-                            .join(",")
-                    };
-                    let log_size = match audience {
-                        Audience::Human => {
-                            bytesize::ByteSize(*log_size_bytes).to_string()
+                for Feed { position, info } in feeds.iter() {
+                    match info {
+                        Some(Info {
+                            name,
+                            dir,
+                            age_of_output,
+                            age_of_log,
+                            log_size_bytes,
+                            log_lines,
+                            pid,
+                            state,
+                            pdescendants,
+                        }) => {
+                            let pdescendants = if pdescendants.is_empty() {
+                                "-".to_string()
+                            } else {
+                                let mut pdescendants: Vec<&ps::Proc> =
+                                    pdescendants.iter().collect();
+                                pdescendants.sort_by_key(|p| p.pid);
+                                pdescendants
+                                    .iter()
+                                    .map(|p| {
+                                        format!(
+                                            "{}:{}",
+                                            p.pid,
+                                            p.state.to_str()
+                                        )
+                                    })
+                                    .collect::<Vec<String>>()
+                                    .join(",")
+                            };
+                            let log_size = match audience {
+                                Audience::Human => {
+                                    bytesize::ByteSize(*log_size_bytes)
+                                        .to_string()
+                                }
+                                Audience::Machine => {
+                                    log_size_bytes.to_string()
+                                }
+                            };
+                            table.add_row(vec![
+                                &position.to_string(),
+                                name,
+                                dir.to_string_lossy().as_ref(),
+                                &duration_fmt(*age_of_output, audience),
+                                &duration_fmt(*age_of_log, audience),
+                                &log_size,
+                                &log_lines.to_string(),
+                                &pid.to_string(),
+                                &state
+                                    .map(|s| s.to_str().to_string())
+                                    .unwrap_or("-".to_string()),
+                                &pdescendants,
+                            ]);
                         }
-                        Audience::Machine => log_size_bytes.to_string(),
-                    };
-                    table.add_row(vec![
-                        &position.to_string(),
-                        name,
-                        dir.to_string_lossy().as_ref(),
-                        &duration_fmt(*age_of_output, audience),
-                        &duration_fmt(*age_of_log, audience),
-                        &log_size,
-                        &log_lines.to_string(),
-                        &pid.to_string(),
-                        &state
-                            .map(|s| s.to_str().to_string())
-                            .unwrap_or("-".to_string()),
-                        &pdescendants,
-                    ]);
+                        None => {
+                            table.add_row(vec![
+                                &position.to_string(),
+                                "-",
+                                "-",
+                                "-",
+                                "-",
+                                "-",
+                                "-",
+                                "-",
+                                "-",
+                                "-",
+                            ]);
+                        }
+                    }
                 }
                 format!("{}", table)
             }

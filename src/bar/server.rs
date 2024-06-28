@@ -1,17 +1,18 @@
 use std::{
     collections::HashSet,
-    mem,
+    io,
     path::{Path, PathBuf},
     result,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use anyhow::anyhow;
 use tokio::{
     fs,
     sync::{
         mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
-        oneshot,
+        oneshot, Notify,
     },
     task::{JoinHandle, JoinSet},
 };
@@ -51,11 +52,20 @@ pub struct Api {
 #[derive(Debug)]
 enum Msg {
     On(oneshot::Sender<anyhow::Result<()>>),
-    Off(oneshot::Sender<anyhow::Result<()>>),
+    Off(oneshot::Sender<()>),
     Status(oneshot::Sender<anyhow::Result<bar::status::Status>>),
-    Reload(oneshot::Sender<anyhow::Result<()>>),
-    Expiration { pos: usize },
-    Input { pos: usize, data: String },
+    Reconf(oneshot::Sender<anyhow::Result<()>>),
+    FeedExit {
+        pos: usize,
+        result: io::Result<std::process::ExitStatus>,
+    },
+    Expiration {
+        pos: usize,
+    },
+    Input {
+        pos: usize,
+        data: String,
+    },
     Output,
 }
 
@@ -73,7 +83,7 @@ pub async fn off(api_tx: &ApiSender) -> ApiResult<()> {
     api_tx.send(Api {
         msg: Msg::Off(reply_tx),
     })?;
-    reply_rx.await??;
+    reply_rx.await?;
     Ok(())
 }
 
@@ -87,9 +97,16 @@ pub async fn status(api_tx: &ApiSender) -> ApiResult<bar::status::Status> {
 }
 
 pub async fn reload(api_tx: &ApiSender) -> ApiResult<()> {
+    off(api_tx).await?;
+    reconf(api_tx).await?;
+    on(api_tx).await?;
+    Ok(())
+}
+
+async fn reconf(api_tx: &ApiSender) -> ApiResult<()> {
     let (reply_tx, reply_rx) = oneshot::channel();
     api_tx.send(Api {
-        msg: Msg::Reload(reply_tx),
+        msg: Msg::Reconf(reply_tx),
     })?;
     reply_rx.await??;
     Ok(())
@@ -102,6 +119,17 @@ pub async fn input(
 ) -> ApiResult<()> {
     api_tx.send(Api {
         msg: Msg::Input { pos, data },
+    })?;
+    Ok(())
+}
+
+pub async fn exit(
+    api_tx: &ApiSender,
+    pos: usize,
+    result: io::Result<std::process::ExitStatus>,
+) -> ApiResult<()> {
+    api_tx.send(Api {
+        msg: Msg::FeedExit { pos, result },
     })?;
     Ok(())
 }
@@ -119,8 +147,10 @@ pub async fn start(
 }
 
 // TODO Move data fields from Server to appropriate State variants.
+#[derive(Debug)]
 enum State {
     On,
+    Offing { notify: Arc<Notify> },
     Off,
 }
 
@@ -130,7 +160,7 @@ struct Server {
     conf: Conf,
     state: State,
     bar: Bar,
-    feeds: Vec<Feed>,
+    feeds: Vec<Option<Feed>>,
     expiration_timers: Vec<Option<JoinHandle<()>>>,
     output_timer: Option<JoinHandle<()>>,
     output_interval: Duration,
@@ -179,7 +209,7 @@ impl Server {
                     }
                     let x11 = self.x11.take().unwrap_or_else(|| {
                         unreachable!(
-                            "x11 failure shoudl have caused a return above."
+                            "X11 failure should have caused a return above."
                         );
                     });
                     x11.set_root_window_name(&data)?;
@@ -196,7 +226,6 @@ impl Server {
     }
 
     async fn on(&mut self) -> anyhow::Result<()> {
-        self.off().await?;
         self.bar = Bar::from_conf(&self.conf);
         self.feeds = Vec::new();
         self.expiration_timers = Vec::new();
@@ -206,10 +235,10 @@ impl Server {
                 .dir
                 .join(conf::FEEDS_DIR_NAME)
                 .join(format!("{:02}-{}", pos, &feed_cfg.name));
-            let feed_proc =
+            let feed =
                 Feed::start(feed_cfg, &feed_dir, pos, self.self_tx.clone())
                     .await?;
-            self.feeds.push(feed_proc);
+            self.feeds.push(Some(feed));
             self.expiration_timers.push(None);
             self.reschedule_expiration(pos);
             self.ensure_output_scheduled();
@@ -218,44 +247,57 @@ impl Server {
         Ok(())
     }
 
-    async fn off(&mut self) -> anyhow::Result<()> {
-        let mut feeds: Vec<Feed> = Vec::new();
-        mem::swap(self.feeds.as_mut() as &mut Vec<Feed>, feeds.as_mut());
-        let mut stops = FuturesUnordered::new();
-        for (pos, feed) in feeds.iter_mut().enumerate() {
-            stops.push(async move {
-                (pos, feed.get_name().to_string(), feed.stop().await)
-            });
+    fn off_begin(&mut self) -> Arc<Notify> {
+        tracing::info!("Shutdown begin.");
+        for feed in self.feeds.iter().filter_map(|x| x.as_ref()) {
+            feed.stop();
         }
-        while let Some((pos, name, result)) = stops.next().await {
-            match result {
-                Err(error) => {
-                    tracing::error!(?error, pos, name, "Feed stop failure.");
-                    // TODO Post notification.
-                }
-                Ok(()) => {
-                    tracing::info!(pos, name, "Feed stop success.");
-                }
-            }
-            self.bar.clear(pos);
-            self.output().await;
-        }
-        for timer_opt in self.expiration_timers.drain(0..) {
-            timer_opt.map(|timer| timer.abort());
-        }
-        self.output_timer.take().map(|timer| timer.abort());
-        self.output_blank().await;
-        self.x11.take();
-        self.state = State::Off;
-        debug_assert!(self.feeds.is_empty());
-        debug_assert!(self.expiration_timers.is_empty());
-        Ok(())
+        let notify = Arc::new(Notify::new());
+        self.state = State::Offing {
+            notify: notify.clone(),
+        };
+        notify
     }
 
-    async fn reload(&mut self) -> anyhow::Result<()> {
-        self.off().await?;
-        self.conf = Conf::load_or_init(&self.dir).await?;
-        self.on().await?;
+    async fn off_feed(
+        &mut self,
+        pos: usize,
+        result: io::Result<std::process::ExitStatus>,
+    ) -> anyhow::Result<()> {
+        let mut feed = self.feeds[pos].take().unwrap_or_else(|| {
+            unreachable!(
+                "Feed exited more than once. pos={}. result={:?}",
+                pos, result
+            )
+        });
+        let name = feed.get_name();
+        match result {
+            Err(error) => {
+                tracing::error!(pos, name, ?error, "Feed stop failure.");
+                // TODO Post notification.
+            }
+            Ok(exit_status) => {
+                tracing::info!(pos, name, ?exit_status, "Feed stop success.");
+            }
+        }
+        feed.clean_up().await?;
+        self.bar.clear(pos);
+        self.output().await;
+        let num_feeds_still_running =
+            self.feeds.iter().filter(|x| x.is_some()).count();
+        match &self.state {
+            State::Offing { notify } if num_feeds_still_running == 0 => {
+                for timer_opt in self.expiration_timers.drain(0..) {
+                    timer_opt.map(|timer| timer.abort());
+                }
+                self.output_timer.take().map(|timer| timer.abort());
+                self.x11.take();
+                notify.notify_waiters();
+                self.output_blank().await;
+                self.state = State::Off;
+            }
+            _ => (),
+        }
         Ok(())
     }
 
@@ -268,17 +310,21 @@ impl Server {
                 let mut states = ps::states(ps_list.as_slice());
                 let mut stati = Vec::new();
                 for (pos, cfg) in self.conf.feeds.iter().enumerate() {
-                    let proc = &procs[pos];
-                    let log_file = proc.get_log_path();
-                    let log_mtime = crate::fs::mtime(&log_file).await?;
-                    let log_size_bytes =
-                        crate::fs::size_in_bytes(&log_file).await?;
-                    let now = SystemTime::now();
-                    let age_of_output =
-                        proc.get_last_output_time().and_then(|last| {
-                            now.duration_since(last)
-                                .map_err(|error| {
-                                    tracing::warn!(
+                    let info = match &procs[pos] {
+                        None => None,
+                        Some(feed) => {
+                            let log_file = feed.get_log_path();
+                            let log_mtime =
+                                crate::fs::mtime(&log_file).await?;
+                            let log_size_bytes =
+                                crate::fs::size_in_bytes(&log_file).await?;
+                            let now = SystemTime::now();
+                            let age_of_output = feed
+                                .get_last_output_time()
+                                .and_then(|last| {
+                                    now.duration_since(last)
+                                        .map_err(|error| {
+                                            tracing::warn!(
                                         ?error,
                                         "Last output is from the future. \
                                          This far away: {}",
@@ -286,64 +332,69 @@ impl Server {
                                             error.duration()
                                         )
                                     );
-                                    // TODO Post notification.
+                                            // TODO Post notification.
+                                        })
+                                        .ok()
+                                });
+                            let age_of_log = (log_size_bytes > 0)
+                                .then(|| {
+                                    now.duration_since(log_mtime)
+                                    .map_err(|error| {
+                                        tracing::warn!(
+                                            ?error,
+                                            "Log was modified in the future. \
+                                             This far away: {}",
+                                            humantime::format_duration(error.duration())
+                                        );
+                                        // TODO Post notification.
+                                    })
+                                    .ok()
                                 })
-                                .ok()
-                        });
-                    let age_of_log = (log_size_bytes > 0)
-                        .then(|| {
-                            now.duration_since(log_mtime)
-                                .map_err(|error| {
-                                    tracing::warn!(
-                                        ?error,
-                                        "Log was modified in the future. \
-                                         This far away: {}",
-                                        humantime::format_duration(
-                                            error.duration()
-                                        )
-                                    );
-                                    // TODO Post notification.
-                                })
-                                .ok()
-                        })
-                        .flatten();
-                    let log_lines = match fs::read_to_string(&log_file).await
-                    {
-                        Ok(log) => {
-                            log.lines().map(|line| line.to_string()).count()
-                        }
-                        Err(err) => {
-                            tracing::error!(
-                                "Failed to read log file: {:?}. Error: {:?}",
-                                &log_file,
-                                &err
-                            );
-                            // TODO Post notification.
-                            0
+                                .flatten();
+                            let log_lines =
+                                match fs::read_to_string(&log_file).await {
+                                    Ok(log) => log
+                                        .lines()
+                                        .map(|line| line.to_string())
+                                        .count(),
+                                    Err(err) => {
+                                        tracing::error!(
+                                            ?log_file,
+                                            ?err,
+                                            "Failed to read log file",
+                                        );
+                                        // TODO Post notification.
+                                        0
+                                    }
+                                };
+
+                            // Removing to reuse existing set allocation,
+                            // since we'll never look it up more than once
+                            // anyway.
+                            let pdescendants: HashSet<ps::Proc> =
+                                pdescendants
+                                    .remove(&feed.get_pid())
+                                    .unwrap_or_default();
+                            let state: Option<ps::State> =
+                                states.remove(&feed.get_pid());
+
+                            Some(bar::status::Info {
+                                name: cfg.name.to_string(),
+                                dir: feed.get_dir_path().to_owned(),
+                                age_of_output,
+                                age_of_log,
+                                log_size_bytes,
+                                log_lines,
+                                pid: feed.get_pid(),
+                                state,
+                                pdescendants,
+                            })
                         }
                     };
-
-                    // Removing to reuse existing set allocation, since we'll
-                    // never look it up more than once anyway.
-                    let pdescendants: HashSet<ps::Proc> = pdescendants
-                        .remove(&proc.get_pid())
-                        .unwrap_or_default();
-                    let state: Option<ps::State> =
-                        states.remove(&proc.get_pid());
-
-                    let feed_status = bar::status::Feed {
+                    stati.push(bar::status::Feed {
                         position: pos + 1,
-                        name: cfg.name.to_string(),
-                        dir: proc.get_dir_path().to_owned(),
-                        age_of_output,
-                        age_of_log,
-                        log_size_bytes,
-                        log_lines,
-                        pid: proc.get_pid(),
-                        state,
-                        pdescendants,
-                    };
-                    stati.push(feed_status);
+                        info,
+                    });
                 }
                 bar::status::Status::UpOn { feeds: stati }
             }
@@ -354,6 +405,13 @@ impl Server {
     async fn handle(&mut self, msg: Msg) -> anyhow::Result<()> {
         tracing::debug!(?msg, "Handling message.");
         match (&self.state, msg) {
+            (State::Offing { .. }, Msg::FeedExit { pos, result }) => {
+                self.off_feed(pos, result).await?;
+            }
+            (_, Msg::FeedExit { pos, result }) => {
+                tracing::warn!(pos, ?result, "Unsolicited feed exit.");
+                self.off_feed(pos, result).await?;
+            }
             (
                 State::Off,
                 msg @ (Msg::Expiration { pos: _ }
@@ -362,7 +420,7 @@ impl Server {
             ) => {
                 tracing::warn!(?msg, "Ignoring in off state.");
             }
-            (State::On, Msg::Expiration { pos }) => {
+            (State::On | State::Offing { .. }, Msg::Expiration { pos }) => {
                 self.expiration_timers[pos]
                     .take()
                     .unwrap_or_else(|| unreachable!())
@@ -370,13 +428,18 @@ impl Server {
                 self.bar.expire(pos);
                 self.ensure_output_scheduled();
             }
-            (State::On, Msg::Input { pos, data }) => {
+            (
+                State::On | State::Offing { notify: _ },
+                Msg::Input { pos, data },
+            ) => {
                 self.reschedule_expiration(pos);
                 self.bar.set(pos, &data);
                 self.ensure_output_scheduled();
-                self.feeds[pos].set_last_output_time();
+                if let Some(feed) = self.feeds[pos].as_mut() {
+                    feed.set_last_output_time();
+                }
             }
-            (State::On, Msg::Output) => {
+            (State::On | State::Offing { .. }, Msg::Output) => {
                 self.output_timer.take().unwrap_or_else(|| {
                     unreachable!(
                         "Output msg arrived without being scheduled."
@@ -394,6 +457,19 @@ impl Server {
                     )
                 })
             }
+            (State::Offing { .. }, Msg::On(reply_tx)) => {
+                tracing::warn!("Still offing. Ignoring request to turn on.");
+                reply_tx
+                    .send(Err(anyhow!(
+                        "Still offing. Not ready to turn back on."
+                    )))
+                    .unwrap_or_else(|error| {
+                        tracing::error!(
+                            ?error,
+                            "Failed to reply. Sender dropped."
+                        )
+                    })
+            }
             (State::Off, Msg::On(reply_tx)) => {
                 let result = self.on().await;
                 reply_tx.send(result).unwrap_or_else(|error| {
@@ -404,18 +480,23 @@ impl Server {
                 })
             }
             (State::On, Msg::Off(reply_tx)) => {
-                let result = self.off().await;
-                reply_tx.send(result).unwrap_or_else(|error| {
-                    tracing::error!(
-                        ?error,
-                        "Failed to reply. Sender dropped."
-                    )
-                })
+                let notify = self.off_begin();
+                tokio::spawn(async move {
+                    notify.notified().await;
+                    reply_tx.send(()).unwrap_or_else(|error| {
+                        tracing::error!(
+                            ?error,
+                            "Failed to reply. Sender dropped."
+                        )
+                    });
+                });
             }
-            (State::Off, Msg::Off(reply_tx)) => {
-                tracing::warn!("Already off. Ignoring request to turn off.");
+            (State::Off | State::Offing { .. }, Msg::Off(reply_tx)) => {
+                tracing::warn!(
+                    "Already off or offing. Ignoring request to turn off."
+                );
                 // TODO Let client know we're already off?
-                reply_tx.send(Ok(())).unwrap_or_else(|error| {
+                reply_tx.send(()).unwrap_or_else(|error| {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
@@ -431,14 +512,27 @@ impl Server {
                     )
                 })
             }
-            (_, Msg::Reload(reply_tx)) => {
-                let result = self.reload().await;
+            (State::Off, Msg::Reconf(reply_tx)) => {
+                let result =
+                    Conf::load_or_init(&self.dir).await.map(|conf| {
+                        self.conf = conf;
+                    });
                 reply_tx.send(result).unwrap_or_else(|error| {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
                     )
                 })
+            }
+            (State::On | State::Offing { .. }, Msg::Reconf(reply_tx)) => {
+                reply_tx
+                    .send(Err(anyhow!("Can only reconfig in off state.")))
+                    .unwrap_or_else(|error| {
+                        tracing::error!(
+                            ?error,
+                            "Failed to reply. Sender dropped."
+                        )
+                    })
             }
         }
         Ok(())

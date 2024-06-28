@@ -1,4 +1,5 @@
 use std::{
+    io,
     path::{Path, PathBuf},
     process::Stdio,
     time::SystemTime,
@@ -11,6 +12,7 @@ use tokio::{
     process::{self, Command},
     task::{spawn_blocking, JoinHandle},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{info_span, Instrument};
 
 use crate::{bar, conf};
@@ -22,10 +24,11 @@ pub struct Feed {
     dir: PathBuf,
     log_file: PathBuf,
     pid_file: PathBuf,
-    proc: process::Child,
-    pid: nix::unistd::Pid,
+    life: CancellationToken,
+    pid: u32,
     pgid: nix::unistd::Pid,
-    out: Option<JoinHandle<anyhow::Result<()>>>,
+    output_reader: Option<JoinHandle<anyhow::Result<()>>>,
+    waiter_and_killer: Option<JoinHandle<anyhow::Result<()>>>,
     last_output: Option<SystemTime>,
 }
 
@@ -47,7 +50,7 @@ impl Feed {
     }
 
     pub fn get_pid(&self) -> u32 {
-        self.pid.as_raw().unsigned_abs()
+        self.pid
     }
 
     pub fn get_pgid(&self) -> u32 {
@@ -88,7 +91,7 @@ impl Feed {
             .await??
         };
         let shell = cfg.shell.clone().unwrap_or(conf::default_shell());
-        let mut proc = Command::new(shell)
+        let mut child = Command::new(shell)
             .arg("-c") // FIXME Some shells may use a different argument flag?
             .arg(&cfg.cmd)
             .current_dir(&dir)
@@ -101,7 +104,7 @@ impl Feed {
                 &dir, cfg,
             ))?;
 
-        let pid = proc.id().ok_or(anyhow!(
+        let pid = child.id().ok_or(anyhow!(
             "Failed to get child process PID for feed: {:?}",
             cfg
         ))?;
@@ -109,18 +112,23 @@ impl Feed {
         fs::write(&pid_file, pid.to_string())
             .await
             .context(format!("Failed to write PID file: {:?}", &pid_file))?;
-        let pid = nix::unistd::Pid::from_raw(pid as i32);
 
-        let stdout = proc.stdout.take().unwrap_or_else(|| {
+        // XXX Assuming Command.process_group(0) was called.
+        let pgid = nix::unistd::Pid::from_raw(pid as i32);
+
+        let stdout = child.stdout.take().unwrap_or_else(|| {
             unreachable!("stdout not requested at process spawn.")
         });
-        let out = tokio::spawn(
-            read_stdout(stdout, pos, dst)
-                .instrument(info_span!(
-                    "feed",
-                    pos = pos + 1,
-                    name = cfg.name
-                ))
+        let span = info_span!("feed", pos = pos + 1, name = cfg.name, pid);
+        let output_reader = tokio::spawn(
+            output_reader(stdout, pos, dst.clone())
+                .instrument(span.clone())
+                .in_current_span(),
+        );
+        let life = CancellationToken::new();
+        let waiter_and_killer = tokio::spawn(
+            waiter_and_killer(dst.clone(), life.clone(), pos, pgid, child)
+                .instrument(span)
                 .in_current_span(),
         );
         let selph = Self {
@@ -129,10 +137,11 @@ impl Feed {
             dir,
             log_file: log_file_path,
             pid_file,
-            proc,
+            life,
             pid,
-            pgid: pid, // XXX Assuming Command.process_group(0) was called.
-            out: Some(out),
+            pgid,
+            output_reader: Some(output_reader),
+            waiter_and_killer: Some(waiter_and_killer),
             last_output: None,
         };
         Ok(selph)
@@ -146,35 +155,90 @@ impl Feed {
             name = self.name
         )
     )]
-    pub async fn stop(&mut self) -> anyhow::Result<()> {
+    pub fn stop(&self) {
         tracing::debug!("Stopping");
+        self.life.cancel();
+    }
 
-        nix::sys::signal::killpg(
-            self.pgid,
-            nix::sys::signal::Signal::SIGKILL,
+    #[tracing::instrument(
+        name = "feed_clean",
+        skip_all,
+        fields(
+            pos = self.pos + 1,
+            name = self.name
         )
-        .context(format!("Failed to kill process group for: {:?}", self))?;
-        tracing::debug!("Process group killed.");
-
-        self.proc.kill().await?;
-        tracing::debug!("Child proc killed. Waiting for exit.");
-
-        self.proc.wait().await?;
-        tracing::debug!("Child proc exited.");
-
-        self.out
+    )]
+    pub async fn clean_up(&mut self) -> anyhow::Result<()> {
+        tracing::debug!("Starting.");
+        self.waiter_and_killer
             .take()
             .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
             .await??;
-        tracing::debug!("stdout router exited");
+        self.output_reader
+            .take()
+            .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
+            .await??;
         fs::remove_file(self.pid_file.as_path()).await?;
-        tracing::info!("Stopped.");
+        tracing::info!("Done.");
         Ok(())
     }
 }
 
 #[tracing::instrument(skip_all)]
-async fn read_stdout(
+async fn waiter_and_killer(
+    dst_tx: bar::server::ApiSender,
+    life: CancellationToken,
+    pos: usize,
+    pgid: nix::unistd::Pid,
+    mut child: process::Child,
+) -> anyhow::Result<()> {
+    tracing::info!("Starting.");
+    let result: io::Result<std::process::ExitStatus> = async {
+        tokio::select! {
+            _ = life.cancelled() => {
+                nix::sys::signal::killpg(
+                    pgid,
+                    nix::sys::signal::Signal::SIGKILL
+                ).map_err(|errno| {
+                    let desc = errno.desc();
+                    let errno = errno as i32;
+                    let pgid = pgid.as_raw();
+                    tracing::error!(
+                        pos,
+                        pgid,
+                        errno,
+                        desc,
+                        "Failed to kill process group.",
+                    );
+                    io::Error::from_raw_os_error(errno)
+                })?;
+                tracing::debug!("Process group killed.");
+                child.start_kill()?;
+                child.wait().await
+            }
+            // XXX .wait() drops stdin, but we can first .take() it
+            //     after .spawn() if/when we actually need it.
+            result = child.wait() => {
+                tracing::error!(?result, "Unsolicited feed process exit.");
+                // TODO Post notification.
+                // TODO Should we try to kill the process group here anyway?
+                result
+            }
+        }
+    }
+    .await;
+    if let Err(error) = bar::server::exit(&dst_tx, pos, result).await {
+        tracing::error!(
+            ?error,
+            "Failed to report feed exit back to the bar server."
+        );
+    }
+    tracing::debug!("Exiting.");
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+async fn output_reader(
     stdout: process::ChildStdout,
     pos: usize,
     dst_tx: bar::server::ApiSender,
@@ -185,7 +249,6 @@ async fn read_stdout(
         tracing::debug!(?line, "New");
         bar::server::input(&dst_tx, pos, line).await?;
     }
-    tracing::debug!("Closed. Exiting.");
     tracing::debug!("Exiting.");
     Ok(())
 }

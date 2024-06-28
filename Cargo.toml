@@ -1,6 +1,6 @@
 [package]
 name = "barista"
-version = "0.15.1"
+version = "0.15.2"
 edition = "2021"
 
 [dependencies]
@@ -17,6 +17,7 @@ serde = { version = "1.0.203", features = ["derive"] }
 tarpc = { version = "0.34.0", features = ["full"] }
 thiserror = "1.0.61"
 tokio = { version = "1.38.0", features = ["full", "tracing"] }
+tokio-util = "0.7.11"
 toml = "0.8.14"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "local-time"] }
