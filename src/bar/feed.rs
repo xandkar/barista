@@ -58,7 +58,7 @@ impl Feed {
     }
 
     pub fn set_last_output_time(&mut self) {
-        self.last_output = Some(SystemTime::now())
+        self.last_output = Some(SystemTime::now());
     }
 
     pub async fn start(
@@ -271,7 +271,7 @@ pub async fn try_kill_all(dir: &Path) -> anyhow::Result<()> {
                 ?error,
                 ?path,
                 "Failed to lookup and kill feed process group."
-            )
+            );
         }
     }
     if failed > 0 {

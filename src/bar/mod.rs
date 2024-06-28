@@ -57,16 +57,16 @@ impl Bar {
 
     pub fn clear_all(&mut self) {
         for i in 0..self.slots.len() {
-            self.clear(i)
+            self.clear(i);
         }
     }
 
     pub fn clear(&mut self, i: usize) {
-        self.overwrite(i, self.clear_char)
+        self.overwrite(i, self.clear_char);
     }
 
     pub fn expire(&mut self, i: usize) {
-        self.overwrite(i, self.expire_char)
+        self.overwrite(i, self.expire_char);
     }
 
     fn overwrite(&mut self, i: usize, c: char) {

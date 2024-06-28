@@ -185,12 +185,12 @@ impl Server {
 
     async fn output(&mut self) {
         if let Some(data) = self.bar.show_unshown() {
-            self.output_data(&data).await
+            self.output_data(&data).await;
         }
     }
 
     async fn output_blank(&mut self) {
-        self.output_data("").await
+        self.output_data("").await;
     }
 
     async fn output_data(&mut self, data: &str) {
@@ -287,7 +287,7 @@ impl Server {
                     timer.abort();
                 }
                 if let Some(timer) = self.output_timer.take() {
-                    timer.abort()
+                    timer.abort();
                 }
                 self.x11.take();
                 notify.notify_waiters();
@@ -440,7 +440,7 @@ impl Server {
                         "Output msg arrived without being scheduled."
                     )
                 });
-                self.output().await
+                self.output().await;
             }
             (State::On, Msg::On(reply_tx)) => {
                 tracing::warn!("Already on. Ignoring request to turn on.");
@@ -449,8 +449,8 @@ impl Server {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
-                    )
-                })
+                    );
+                });
             }
             (State::Offing { .. }, Msg::On(reply_tx)) => {
                 tracing::warn!("Still offing. Ignoring request to turn on.");
@@ -462,8 +462,8 @@ impl Server {
                         tracing::error!(
                             ?error,
                             "Failed to reply. Sender dropped."
-                        )
-                    })
+                        );
+                    });
             }
             (State::Off, Msg::On(reply_tx)) => {
                 let result = self.on().await;
@@ -471,8 +471,8 @@ impl Server {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
-                    )
-                })
+                    );
+                });
             }
             (State::On, Msg::Off(reply_tx)) => {
                 let notify = self.off_begin();
@@ -482,7 +482,7 @@ impl Server {
                         tracing::error!(
                             ?error,
                             "Failed to reply. Sender dropped."
-                        )
+                        );
                     });
                 });
             }
@@ -495,8 +495,8 @@ impl Server {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
-                    )
-                })
+                    );
+                });
             }
             (_, Msg::Status(reply_tx)) => {
                 let result = self.status().await;
@@ -504,8 +504,8 @@ impl Server {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
-                    )
-                })
+                    );
+                });
             }
             (State::Off, Msg::Reconf(reply_tx)) => {
                 let result =
@@ -516,8 +516,8 @@ impl Server {
                     tracing::error!(
                         ?error,
                         "Failed to reply. Sender dropped."
-                    )
-                })
+                    );
+                });
             }
             (State::On | State::Offing { .. }, Msg::Reconf(reply_tx)) => {
                 reply_tx
@@ -526,8 +526,8 @@ impl Server {
                         tracing::error!(
                             ?error,
                             "Failed to reply. Sender dropped."
-                        )
-                    })
+                        );
+                    });
             }
         }
         Ok(())
@@ -546,7 +546,7 @@ impl Server {
             let ttl = Duration::from_secs_f64(ttl);
             let new = self.schedule(Msg::Expiration { pos }, ttl);
             if let Some(old) = self.expiration_timers[pos].replace(new) {
-                old.abort()
+                old.abort();
             }
         }
     }
