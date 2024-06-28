@@ -2,7 +2,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [dominus]
+    branches: [electus]
   pull_request:
   schedule:
     - cron:  '7 7 * * *'
