@@ -281,7 +281,7 @@ impl Server {
             }
         }
         feed.clean_up().await?;
-        self.bar.clear(pos);
+        self.bar.expire(pos);
         self.output().await;
         let num_feeds_still_running =
             self.feeds.iter().filter(|x| x.is_some()).count();
