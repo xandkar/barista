@@ -1,6 +1,11 @@
 [package]
 name = "barista"
 version = "0.15.3"
+description = "Concurrent status bar with cache expirations and remote control; aggregating outputs from external collector processes."
+repository = "https://github.com/xandkar/barista"
+keywords = ["dwm", "status", "bar", "suckless"]
+categories = ["command-line-utilities"]
+license-file = "LICENSE"
 edition = "2021"
 
 [dependencies]
