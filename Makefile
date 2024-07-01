@@ -24,6 +24,8 @@ clippy_cargo:
 clippy_pedantic:
 	cargo clippy -- \
 		-W clippy::pedantic \
+		-A clippy::must_use_candidate \
+		-A clippy::similar_names \
 		-A clippy::single_match_else \
 		-A clippy::uninlined-format-args \
 		-A clippy::missing_errors_doc
