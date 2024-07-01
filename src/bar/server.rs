@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    fmt::Debug,
     io,
     path::{Path, PathBuf},
     result,
@@ -440,92 +441,47 @@ impl Server {
                 });
                 self.output().await;
             }
-            (State::On, Msg::On(reply_tx)) => {
+            (State::On, Msg::On(client)) => {
                 tracing::warn!("Already on. Ignoring request to turn on.");
                 // TODO Let client know we're already on?
-                reply_tx.send(Ok(())).unwrap_or_else(|error| {
-                    tracing::error!(
-                        ?error,
-                        "Failed to reply. Sender dropped."
-                    );
-                });
+                reply(client, Ok(()));
             }
-            (State::Offing { .. }, Msg::On(reply_tx)) => {
+            (State::Offing { .. }, Msg::On(client)) => {
                 tracing::warn!("Still offing. Ignoring request to turn on.");
-                reply_tx
-                    .send(Err(anyhow!(
-                        "Still offing. Not ready to turn back on."
-                    )))
-                    .unwrap_or_else(|error| {
-                        tracing::error!(
-                            ?error,
-                            "Failed to reply. Sender dropped."
-                        );
-                    });
+                let result =
+                    Err(anyhow!("Still offing. Not ready to turn back on."));
+                reply(client, result);
             }
-            (State::Off, Msg::On(reply_tx)) => {
-                let result = self.on().await;
-                reply_tx.send(result).unwrap_or_else(|error| {
-                    tracing::error!(
-                        ?error,
-                        "Failed to reply. Sender dropped."
-                    );
-                });
+            (State::Off, Msg::On(client)) => {
+                reply(client, self.on().await);
             }
-            (State::On, Msg::Off(reply_tx)) => {
+            (State::On, Msg::Off(client)) => {
                 let notify = self.off_begin();
                 tokio::spawn(async move {
                     notify.notified().await;
-                    reply_tx.send(()).unwrap_or_else(|error| {
-                        tracing::error!(
-                            ?error,
-                            "Failed to reply. Sender dropped."
-                        );
-                    });
+                    reply(client, ());
                 });
             }
-            (State::Off | State::Offing { .. }, Msg::Off(reply_tx)) => {
+            (State::Off | State::Offing { .. }, Msg::Off(client)) => {
                 tracing::warn!(
                     "Already off or offing. Ignoring request to turn off."
                 );
                 // TODO Let client know we're already off?
-                reply_tx.send(()).unwrap_or_else(|error| {
-                    tracing::error!(
-                        ?error,
-                        "Failed to reply. Sender dropped."
-                    );
-                });
+                reply(client, ());
             }
-            (_, Msg::Status(reply_tx)) => {
-                let result = self.status().await;
-                reply_tx.send(result).unwrap_or_else(|error| {
-                    tracing::error!(
-                        ?error,
-                        "Failed to reply. Sender dropped."
-                    );
-                });
+            (_, Msg::Status(client)) => {
+                reply(client, self.status().await);
             }
-            (State::Off, Msg::Reconf(reply_tx)) => {
+            (State::Off, Msg::Reconf(client)) => {
                 let result =
                     Conf::load_or_init(&self.dir).await.map(|conf| {
                         self.conf = conf;
                     });
-                reply_tx.send(result).unwrap_or_else(|error| {
-                    tracing::error!(
-                        ?error,
-                        "Failed to reply. Sender dropped."
-                    );
-                });
+                reply(client, result);
             }
-            (State::On | State::Offing { .. }, Msg::Reconf(reply_tx)) => {
-                reply_tx
-                    .send(Err(anyhow!("Can only reconfig in off state.")))
-                    .unwrap_or_else(|error| {
-                        tracing::error!(
-                            ?error,
-                            "Failed to reply. Sender dropped."
-                        );
-                    });
+            (State::On | State::Offing { .. }, Msg::Reconf(client)) => {
+                let result = Err(anyhow!("Can only reconfig in off state."));
+                reply(client, result);
             }
         }
         Ok(())
@@ -564,6 +520,12 @@ impl Server {
             .in_current_span(),
         )
     }
+}
+
+fn reply<M: Debug>(tx: oneshot::Sender<M>, msg: M) {
+    if let Err(error) = tx.send(msg) {
+        tracing::error!(?error, "Failed to reply. Sender dropped.");
+    };
 }
 
 #[tracing::instrument(name = "bar", skip_all)]
