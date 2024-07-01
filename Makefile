@@ -4,6 +4,7 @@ check:
 	cargo test
 	cargo clippy
 	$(MAKE) clippy_float_cast
+	$(MAKE) clippy_pedantic
 	cargo fmt --check
 
 .PHONY: clippy_float_cast
