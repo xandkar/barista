@@ -227,10 +227,8 @@ impl Server {
         self.expiration_timers = Vec::new();
         let conf = self.conf.clone();
         for (pos, feed_cfg) in conf.feeds.iter().enumerate() {
-            let feed_dir = self
-                .dir
-                .join(conf::FEEDS_DIR_NAME)
-                .join(format!("{:02}-{}", pos, &feed_cfg.name));
+            let feed_dir =
+                conf::path_feed_dir(&self.dir, pos, &feed_cfg.name);
             let feed =
                 Feed::start(feed_cfg, &feed_dir, pos, self.self_tx.clone())
                     .await?;

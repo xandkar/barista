@@ -59,7 +59,7 @@ pub async fn run(
     backlog: u32,
     bar_tx: bar::server::ApiSender,
 ) -> anyhow::Result<()> {
-    let sock_file = conf::sock_file(&dir);
+    let sock_file = conf::path_server_sock(&dir);
     let bar_ctl_srv = BarCtlServer { bar_tx };
     let socket = UnixSocket::new_stream()?;
     socket.bind(&sock_file)?;

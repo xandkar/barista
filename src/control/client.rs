@@ -18,7 +18,7 @@ pub struct Client {
 
 impl Client {
     pub async fn new(dir: &Path, timeout: Duration) -> anyhow::Result<Self> {
-        let conn = UnixStream::connect(conf::sock_file(dir)).await?;
+        let conn = UnixStream::connect(conf::path_server_sock(dir)).await?;
         let codec_builder = LengthDelimitedCodec::builder();
         let transport = tarpc::serde_transport::new(
             codec_builder.new_framed(conn),

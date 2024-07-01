@@ -72,7 +72,7 @@ impl Feed {
             "Failed to create all directories in path: {:?}",
             &dir
         ))?;
-        let log_file_path = dir.join(conf::FEED_LOG_FILE_NAME);
+        let log_file_path = conf::path_feed_log(&dir);
         let log_file: std::fs::File = {
             // XXX Can't use tokio::fs::File because std::process::Stdio::from
             //     can't work with it and tokio offers no analogue. Possible
@@ -107,7 +107,7 @@ impl Feed {
             "Failed to get child process PID for feed: {:?}",
             cfg
         ))?;
-        let pid_file = dir.join(conf::FEED_PID_FILE_NAME);
+        let pid_file = conf::path_feed_pid(&dir);
         fs::write(&pid_file, pid.to_string())
             .await
             .context(format!("Failed to write PID file: {:?}", &pid_file))?;
@@ -259,7 +259,7 @@ pub async fn try_kill_all(dir: &Path) -> anyhow::Result<()> {
         ?dir,
         "Attempting to find and kill PIDs in feed PID files."
     );
-    let feeds_dir = dir.join(conf::FEEDS_DIR_NAME);
+    let feeds_dir = conf::path_feeds_dir(dir);
     let mut feeds_dir_entries = fs::read_dir(&feeds_dir).await?;
     let mut total: usize = 0;
     let mut failed: usize = 0;
@@ -298,7 +298,7 @@ async fn try_kill(entry: fs::DirEntry) -> anyhow::Result<()> {
     {
         bail!("Non-directory sub-entry: {:?}", &entry_path);
     }
-    let pid_file = entry_path.join(conf::FEED_PID_FILE_NAME);
+    let pid_file = conf::path_feed_pid(&entry_path);
     if !fs::try_exists(&pid_file).await.context(format!(
         "Failed to check feed PID file existence: {:?}",
         &pid_file
