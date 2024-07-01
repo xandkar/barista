@@ -113,14 +113,18 @@ async fn reconf(api_tx: &ApiSender) -> ApiResult<()> {
     Ok(())
 }
 
-pub fn input(api_tx: &ApiSender, pos: usize, data: String) -> ApiResult<()> {
+pub fn feed_data(
+    api_tx: &ApiSender,
+    pos: usize,
+    data: String,
+) -> ApiResult<()> {
     api_tx.send(Api {
         msg: Msg::Input { pos, data },
     })?;
     Ok(())
 }
 
-pub fn exit(
+pub fn feed_exit(
     api_tx: &ApiSender,
     pos: usize,
     result: io::Result<std::process::ExitStatus>,
@@ -141,6 +145,22 @@ pub async fn start(
         run(tx.clone(), rx, dir.to_path_buf(), conf).in_current_span(),
     );
     Ok(tx)
+}
+
+#[tracing::instrument(name = "bar", skip_all)]
+async fn run(
+    tx: ApiSender,
+    mut rx: ApiReceiver,
+    dir: PathBuf,
+    conf: Conf,
+) -> anyhow::Result<()> {
+    tracing::info!("Starting");
+    tracing::debug!("Initial conf: {:#?}", conf);
+    let mut server = Server::new(conf, dir, tx);
+    while let Some(Api { msg }) = rx.recv().await {
+        server.handle(msg).await?;
+    }
+    Ok(())
 }
 
 // TODO Move data fields from Server to appropriate State variants.
@@ -526,20 +546,4 @@ fn reply<M: Debug>(tx: oneshot::Sender<M>, msg: M) {
     if let Err(error) = tx.send(msg) {
         tracing::error!(?error, "Failed to reply. Sender dropped.");
     };
-}
-
-#[tracing::instrument(name = "bar", skip_all)]
-pub async fn run(
-    tx: ApiSender,
-    mut rx: ApiReceiver,
-    dir: PathBuf,
-    conf: Conf,
-) -> anyhow::Result<()> {
-    tracing::info!("Starting");
-    tracing::debug!("Initial conf: {:#?}", conf);
-    let mut server = Server::new(conf, dir, tx);
-    while let Some(Api { msg }) = rx.recv().await {
-        server.handle(msg).await?;
-    }
-    Ok(())
 }

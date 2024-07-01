@@ -227,7 +227,7 @@ async fn waiter_and_killer(
         }
     }
     .await;
-    if let Err(error) = bar::server::exit(&dst_tx, pos, result) {
+    if let Err(error) = bar::server::feed_exit(&dst_tx, pos, result) {
         tracing::error!(
             ?error,
             "Failed to report feed exit back to the bar server."
@@ -247,7 +247,7 @@ async fn output_reader(
     let mut lines = tokio::io::BufReader::new(stdout).lines();
     while let Some(line) = lines.next_line().await? {
         tracing::debug!(?line, "New");
-        bar::server::input(&dst_tx, pos, line)?;
+        bar::server::feed_data(&dst_tx, pos, line)?;
     }
     tracing::debug!("Exiting.");
     Ok(())

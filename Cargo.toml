@@ -1,6 +1,6 @@
 [package]
 name = "barista"
-version = "0.15.3"
+version = "0.15.4"
 description = "Concurrent status bar with cache expirations and remote control; aggregating outputs from external collector processes."
 repository = "https://github.com/xandkar/barista"
 keywords = ["dwm", "status", "bar", "suckless"]
