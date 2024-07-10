@@ -62,8 +62,9 @@ Each command's `stderr` is redirected to `~/.barista/feeds/$i-$name/log`.
 Install
 -------------------------------------------------------------------------------
 
-1. `cargo install barista --git https://github.com/xandkar/barista`
+1. `cargo install barista`
 2. Ensure `~/.cargo/bin/` is in your `PATH`
+3. `barista help`
 
 Use
 -------------------------------------------------------------------------------
