@@ -1,6 +1,8 @@
 barista
 ===============================================================================
 
+![screenshot](screenshot.png)
+
 [![test status](https://github.com/xandkar/barista/actions/workflows/test.yml/badge.svg)](https://github.com/xandkar/barista/actions)
 [![dependencies status](https://deps.rs/repo/github/xandkar/barista/status.svg)](https://deps.rs/repo/github/xandkar/barista)
 
