@@ -104,18 +104,18 @@ Yo Dawg, we heard you like status, so you can now check status of your status[^1
 ```sh
 $ barista status
  POSITION  NAME        DIR                                      LAST_OUTPUTTED     LAST_LOGGED        LOG_SIZE  LOG_LINES  PID    PROC_STATE  PROC_DESCENDANTS
- 1         upower      /home/xand/.barista/feeds/00-upower      7s                 3h 48m 35s         565.3 KB  6880       17424  S           17451:Z,17452:S
- 2         eth         /home/xand/.barista/feeds/01-eth         0s                 8days 18h 37m 30s  4.1 MB    39819      17425  S           -
- 3         wifi        /home/xand/.barista/feeds/02-wifi        0s                 8days 18h 37m 30s  4.1 MB    40508      17426  S           -
- 4         bluetooth   /home/xand/.barista/feeds/03-bluetooth   0s                 8days 18h 37m 30s  4.1 MB    39537      17427  S           -
- 5         memory      /home/xand/.barista/feeds/04-memory      0s                 8days 18h 37m 30s  8.2 MB    78508      17428  S           -
- 6         disk        /home/xand/.barista/feeds/05-disk        3s                 8days 18h 37m 30s  1.7 MB    16210      17429  S           -
- 7         backlight   /home/xand/.barista/feeds/06-backlight   4days 23h 20m 21s  8days 18h 37m 30s  39.0 KB   608        17430  S           -
- 8         pulseaudio  /home/xand/.barista/feeds/07-pulseaudio  9m 16s             8days 18h 37m 30s  185.9 KB  2114       17431  S           17461:S
- 9         mpd         /home/xand/.barista/feeds/08-mpd         0s                 8days 18h 37m 30s  7.9 MB    76463      17432  S           -
- 10        weather     /home/xand/.barista/feeds/09-weather     15m 30s            35m 30s            185.5 KB  3146       17433  S           -
- 11        time        /home/xand/.barista/feeds/10-time        0s                 8days 18h 37m 30s  10.6 MB   78515      17434  S           -
- 12        keymap      /home/xand/.barista/feeds/11-keymap      0s                 8days 18h 37m 30s  8.2 MB    78491      17436  S           -
+ 0         upower      /home/xand/.barista/feeds/00-upower      7s                 3h 48m 35s         565.3 KB  6880       17424  S           17451:Z,17452:S
+ 1         eth         /home/xand/.barista/feeds/01-eth         0s                 8days 18h 37m 30s  4.1 MB    39819      17425  S           -
+ 2         wifi        /home/xand/.barista/feeds/02-wifi        0s                 8days 18h 37m 30s  4.1 MB    40508      17426  S           -
+ 3         bluetooth   /home/xand/.barista/feeds/03-bluetooth   0s                 8days 18h 37m 30s  4.1 MB    39537      17427  S           -
+ 4         memory      /home/xand/.barista/feeds/04-memory      0s                 8days 18h 37m 30s  8.2 MB    78508      17428  S           -
+ 5         disk        /home/xand/.barista/feeds/05-disk        3s                 8days 18h 37m 30s  1.7 MB    16210      17429  S           -
+ 6         backlight   /home/xand/.barista/feeds/06-backlight   4days 23h 20m 21s  8days 18h 37m 30s  39.0 KB   608        17430  S           -
+ 7         pulseaudio  /home/xand/.barista/feeds/07-pulseaudio  9m 16s             8days 18h 37m 30s  185.9 KB  2114       17431  S           17461:S
+ 8         mpd         /home/xand/.barista/feeds/08-mpd         0s                 8days 18h 37m 30s  7.9 MB    76463      17432  S           -
+ 9         weather     /home/xand/.barista/feeds/09-weather     15m 30s            35m 30s            185.5 KB  3146       17433  S           -
+ 10        time        /home/xand/.barista/feeds/10-time        0s                 8days 18h 37m 30s  10.6 MB   78515      17434  S           -
+ 11        keymap      /home/xand/.barista/feeds/11-keymap      0s                 8days 18h 37m 30s  8.2 MB    78491      17436  S           -
 ```
 
 Footnotes
