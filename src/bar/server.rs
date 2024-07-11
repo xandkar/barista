@@ -326,8 +326,8 @@ impl Server {
                 let mut pdescendants = ps::descendants(ps_list.as_slice());
                 let mut states = ps::states(ps_list.as_slice());
                 let mut stati = Vec::new();
-                for (pos, cfg) in self.conf.feeds.iter().enumerate() {
-                    let info = match &procs[pos] {
+                for (position, cfg) in self.conf.feeds.iter().enumerate() {
+                    let info = match &procs[position] {
                         None => None,
                         Some(feed) => {
                             let log_file = feed.get_log_path();
@@ -405,10 +405,7 @@ impl Server {
                             })
                         }
                     };
-                    stati.push(bar::status::Feed {
-                        position: pos + 1,
-                        info,
-                    });
+                    stati.push(bar::status::Feed { position, info });
                 }
                 bar::status::Status::UpOn { feeds: stati }
             }

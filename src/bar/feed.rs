@@ -119,7 +119,7 @@ impl Feed {
         let stdout = child.stdout.take().unwrap_or_else(|| {
             unreachable!("stdout not requested at process spawn.")
         });
-        let span = info_span!("feed", pos = pos + 1, name = cfg.name, pid);
+        let span = info_span!("feed", pos, name = cfg.name, pid);
         let output_reader = tokio::spawn(
             output_reader(stdout, pos, dst.clone())
                 .instrument(span.clone())
@@ -151,7 +151,7 @@ impl Feed {
         name = "feed_stop",
         skip_all,
         fields(
-            pos = self.pos + 1,
+            pos = self.pos,
             name = self.name
         )
     )]
@@ -164,7 +164,7 @@ impl Feed {
         name = "feed_clean",
         skip_all,
         fields(
-            pos = self.pos + 1,
+            pos = self.pos,
             name = self.name
         )
     )]
