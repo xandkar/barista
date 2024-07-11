@@ -36,6 +36,11 @@ enum Cmd {
         #[clap(long, default_value_t = 1024)]
         backlog: u32,
 
+        /// Force start even if either pid or socket file already exists,
+        /// in which case both will be overwritten.
+        #[clap(short, long, default_value_t = false)]
+        force: bool,
+
         /// Turn-on the feeds immediately after start.
         #[clap(long, default_value_t = true)]
         on: bool,
@@ -92,9 +97,9 @@ impl Cli {
         ))?;
         let timeout = Duration::from_secs_f64(self.timeout);
 
-        if let Cmd::Server { backlog, on } = &self.cmd {
+        if let Cmd::Server { backlog, on, force } = &self.cmd {
             // TODO Use timeout in the server?
-            server(&dir, *backlog, *on).await
+            server(&dir, *backlog, *on, *force).await
         } else {
             client(&self.cmd, &dir, timeout).await
         }
@@ -102,24 +107,17 @@ impl Cli {
 }
 
 #[tracing::instrument(skip_all)]
-async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
+async fn server(
+    dir: &Path,
+    backlog: u32,
+    on: bool,
+    force: bool,
+) -> anyhow::Result<()> {
     tracing::info!(?dir, backlog, on, "Starting");
     let pid_file = conf::path_server_pid(dir);
     let sock_file = conf::path_server_sock(dir);
-    if fs::try_exists(&pid_file).await? {
-        bail!(
-            "PID file exists. Another server instance possibly running. \
-            If you're sure it is not - manually remove this file: {:?}",
-            &pid_file
-        );
-    }
-    if fs::try_exists(&sock_file).await? {
-        bail!(
-            "Socket file exists. Another server instance possibly running. \
-            If you're sure it is not - manually remove this file: {:?}",
-            &sock_file
-        );
-    }
+    handle_unique_file("PID", &pid_file, force).await?;
+    handle_unique_file("Socket", &sock_file, force).await?;
     fs::write(&pid_file, std::process::id().to_string()).await?;
     let mut siblings = JoinSet::new();
     let bar_tx = barista::bar::server::start(&mut siblings, dir).await?;
@@ -167,15 +165,48 @@ async fn server(dir: &Path, backlog: u32, on: bool) -> anyhow::Result<()> {
             );
         }
     }
-    fs::remove_file(&sock_file).await.context(format!(
-        "Failed to remove server socket file: {:?}",
-        &sock_file
-    ))?;
-    fs::remove_file(&pid_file).await.context(format!(
-        "Failed to remove server PID file: {:?}",
-        &pid_file
-    ))?;
+    if let Err(error) = fs::remove_file(&sock_file).await {
+        tracing::error!(
+            path = ?&sock_file,
+            ?error,
+            "Failed to remove server socket file."
+        );
+    };
+    if let Err(error) = fs::remove_file(&pid_file).await {
+        tracing::error!(
+            path = ?&pid_file,
+            ?error,
+            "Failed to remove server PID file."
+        );
+    }
     result
+}
+
+async fn handle_unique_file(
+    name: &str,
+    path: &Path,
+    force: bool,
+) -> anyhow::Result<()> {
+    if fs::try_exists(path).await? {
+        let msg = format!(
+            "{} file exists. Another server instance possibly running",
+            name
+        );
+        if force {
+            tracing::warn!(?path, "{}. Removing and continuing.", msg);
+            fs::remove_file(&path).await.context(format!(
+                "Failed to remove server {} file: {:?}",
+                name, path
+            ))?;
+        } else {
+            bail!(
+                "{}. If you're sure it is not - manually remove it: {:?}",
+                msg,
+                path
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn join(siblings: &mut JoinSet<anyhow::Result<()>>) -> usize {

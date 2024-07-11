@@ -178,7 +178,9 @@ impl Feed {
             .take()
             .unwrap_or_else(|| unreachable!("Redundant feed stop attempt."))
             .await??;
-        fs::remove_file(self.pid_file.as_path()).await?;
+        if let Err(error) = fs::remove_file(self.pid_file.as_path()).await {
+            tracing::error!(path = ?self.pid_file.as_path(), ?error, "Failed to remove PID file.");
+        };
         tracing::info!("Done.");
         Ok(())
     }
@@ -319,10 +321,9 @@ async fn try_kill(entry: fs::DirEntry) -> anyhow::Result<()> {
             "Failed to kill process group: {}. PID: {}. PID file: {:?}.",
             pgrp, pid, &pid_file
         ))?;
-    fs::remove_file(&pid_file).await.context(format!(
-        "Failed to remove feed PID file: {:?}",
-        &pid_file
-    ))?;
+    if let Err(error) = fs::remove_file(&pid_file).await {
+        tracing::error!(path = ?&pid_file, ?error, "Failed to remove feed PID file.");
+    }
     Ok(())
 }
 
