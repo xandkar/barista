@@ -1,6 +1,6 @@
 use std::{
     path::Path,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant},
 };
 
 use anyhow::anyhow;
@@ -30,7 +30,7 @@ impl Client {
         )
         .spawn();
         let mut ctx = tarpc::context::current();
-        ctx.deadline = SystemTime::now()
+        ctx.deadline = Instant::now()
             .checked_add(timeout)
             .ok_or(anyhow!("Bad timeout value"))?;
         let selph = Self { client, ctx };
