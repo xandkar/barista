@@ -193,6 +193,7 @@ async fn handle_unique_file(
             name
         );
         if force {
+            // TODO Kill previous instance of the server, not just file remove!
             tracing::warn!(?path, "{}. Removing and continuing.", msg);
             fs::remove_file(&path).await.context(format!(
                 "Failed to remove server {} file: {:?}",
