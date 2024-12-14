@@ -540,7 +540,7 @@ impl Server {
 }
 
 fn reply<M: Debug>(tx: oneshot::Sender<M>, msg: M) {
-    if let Err(error) = tx.send(msg) {
-        tracing::error!(?error, "Failed to reply. Sender dropped.");
+    if let Err(msg) = tx.send(msg) {
+        tracing::error!(?msg, "Failed to reply. Sender dropped.");
     };
 }
