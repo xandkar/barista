@@ -248,7 +248,7 @@ async fn output_reader(
     tracing::info!("Starting.");
     let mut lines = tokio::io::BufReader::new(stdout).lines();
     while let Some(line) = lines.next_line().await? {
-        tracing::debug!(?line, "New");
+        tracing::trace!(?line, "Read.");
         bar::server::feed_data(&dst_tx, pos, line)?;
     }
     tracing::debug!("Exiting.");
