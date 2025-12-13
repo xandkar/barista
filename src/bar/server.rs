@@ -434,7 +434,12 @@ impl Server {
             (State::On | State::Offing { .. }, Msg::Expiration { pos }) => {
                 self.expiration_timers[pos]
                     .take()
-                    .unwrap_or_else(|| unreachable!())
+                    .unwrap_or_else(|| {
+                        unreachable!(
+                            "Expiration timer fired for a \
+                            non-existing feed: pos={pos}"
+                        )
+                    })
                     .await?;
                 self.bar.expire(pos);
                 self.ensure_output_scheduled();
