@@ -29,15 +29,15 @@ pub enum Audience {
     Machine,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[derive(Default)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub enum Status {
     #[default]
     Down,
     UpOff,
-    UpOn { feeds: Vec<Feed> },
+    UpOn {
+        feeds: Vec<Feed>,
+    },
 }
-
 
 impl Status {
     pub fn to_str(&self, audience: Audience) -> String {
